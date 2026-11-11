@@ -45,12 +45,18 @@ jobs:
         id: deploy
         if: env.CLOUDFLARE_API_TOKEN != '' && env.GROQ_KEY != ''
         working-directory: proxy
+        shell: bash
         run: |
+          set -euo pipefail
           npm install --no-audit --no-fund
-          npx wrangler deploy | tee deploy.log
+          npx wrangler deploy 2>&1 | tee deploy.log
           printf '%s' "$GROQ_KEY" | npx wrangler secret put GROQ_KEY
           if [ -n "$APP_TOKEN" ]; then printf '%s' "$APP_TOKEN" | npx wrangler secret put APP_TOKEN; fi
-          url=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)
+          url=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1 || true)
+          if [ -z "$url" ]; then
+            echo "::error::Cloudflare не вернул адрес посредника. Если в журнале выше есть «register a workers.dev subdomain» — откройте dash.cloudflare.com → Workers & Pages и создайте поддомен workers.dev, затем перезапустите сборку."
+            exit 1
+          fi
           echo "Посредник: $url"
           echo "url=$url" >> "$GITHUB_OUTPUT"
       - name: Посредник не развёрнут
