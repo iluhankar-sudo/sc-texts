@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Прототип: распознавание файла</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+  .row { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+  #out div { padding: .25rem 0; border-bottom: 1px solid #8884; cursor: pointer; }
+  #out div.on { font-weight: 700; }
+  small { opacity: .7 }
+</style>
+</head>
+<body>
+<h1>Прототип: файл → строки с таймкодами</h1>
+<div class="row">
+  <input type="file" id="file" accept="audio/*">
+  <select id="lang">
+    <option value="">авто</option>
+    <option value="ru">русский</option>
+    <option value="en">английский</option>
+  </select>
+  <input id="server" value="http://127.0.0.1:8000" size="24">
+  <button id="go">Распознать</button>
+</div>
+<audio id="player" controls style="width:100%"></audio>
+<p id="status"><small>Выберите файл и нажмите «Распознать». Строки подсвечиваются в такт воспроизведению.</small></p>
+<div id="out"></div>
+<script>
+const $ = (id) => document.getElementById(id);
+let segs = [];
+$('file').onchange = () => { const f = $('file').files[0]; if (f) $('player').src = URL.createObjectURL(f); };
+$('go').onclick = async () => {
+  const f = $('file').files[0];
+  if (!f) return;
+  $('status').textContent = 'Распознаю…';
+  const fd = new FormData();
+  fd.append('file', f);
+  fd.append('language', $('lang').value);
+  try {
+    const r = await fetch($('server').value.replace(/\/+$/, '') + '/transcribe', { method: 'POST', body: fd });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    segs = j.segments;
+    $('status').textContent = `Язык: ${j.language} (${j.language_probability}), строк: ${segs.length}`;
+    $('out').replaceChildren(...segs.map((s, i) => {
+      const d = document.createElement('div');
+      d.textContent = `[${s.start.toFixed(1)}–${s.end.toFixed(1)}] ${s.text}`;
+      d.onclick = () => { $('player').currentTime = s.start; $('player').play(); };
+      d.id = 'seg' + i;
+      return d;
+    }));
+  } catch (e) { $('status').textContent = 'Ошибка: ' + e.message; }
+};
+$('player').ontimeupdate = () => {
+  const t = $('player').currentTime;
+  segs.forEach((s, i) => $('seg' + i)?.classList.toggle('on', t >= s.start && t < s.end));
+};
+</script>
+</body>
+</html>

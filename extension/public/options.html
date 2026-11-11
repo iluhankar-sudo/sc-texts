@@ -1,0 +1,138 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sc texts</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { font: 15px/1.5 system-ui, "Segoe UI", sans-serif; color: #f2f4f8; margin: 0; padding: 2.5rem 1rem;
+    background: radial-gradient(120% 80% at 0% 0%, #1d2a3a 0%, transparent 55%), radial-gradient(100% 70% at 100% 100%, #2b1a12 0%, transparent 60%), #0e1116; min-height: 100vh; }
+  main { max-width: 560px; margin: 0 auto; background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.09); border-radius: 18px; padding: 1.5rem 1.75rem 2rem; }
+  h1 { margin: 0 0 .5rem; font-size: 22px; color: #ff7a1a; }
+  label { display: block; margin: 1.1rem 0 .3rem; font-weight: 600; }
+  textarea { resize: vertical; }
+  input, select, textarea { width: 100%; padding: .55rem .75rem; color: inherit; background: rgba(0,0,0,.3); border: 1px solid rgba(255,255,255,.14); border-radius: 10px; font: inherit; }
+  input:focus, select:focus { outline: 2px solid #ff7a1a; outline-offset: 1px; }
+  small { opacity: .6; display: block; margin-top: .3rem; font-size: 12.5px; }
+  button { margin-top: 1.5rem; padding: .6rem 1.6rem; border: 0; border-radius: 999px; font: inherit; font-weight: 650; color: #fff; cursor: pointer; background: linear-gradient(135deg, #ff7a1a, #ff4d00); }
+  #saved { margin-left: .75rem; opacity: 0; transition: opacity .3s; color: #34d399; }
+  #saved.on { opacity: 1; }
+</style>
+</head>
+<body>
+<main>
+<h1>sc texts</h1>
+<label for="mode" data-i18n="optMode"></label>
+<select id="mode">
+  <option value="cloud" data-i18n="optModeCloud"></option>
+  <option value="local" data-i18n="optModeLocal"></option>
+</select>
+
+<label for="apiKey" data-i18n="optApiKey"></label>
+<input id="apiKey" type="password" placeholder="gsk_...">
+<small data-i18n="optApiKeyHint"></small>
+
+<label for="apiUrl" data-i18n="optApiUrl"></label>
+<input id="apiUrl" placeholder="https://api.groq.com/openai/v1">
+<small data-i18n="optApiUrlHint"></small>
+
+<label for="apiModel" data-i18n="optModel"></label>
+<select id="apiModel">
+  <option value="whisper-large-v3" data-i18n="optModelLarge"></option>
+  <option value="whisper-large-v3-turbo" data-i18n="optModelTurbo"></option>
+  <option value="whisper-1" data-i18n="optModelV2"></option>
+  <option value="scribe_v2" data-i18n="optModelScribe"></option>
+</select>
+<small data-i18n="optModelHint"></small>
+
+<label for="elevenKey" data-i18n="optElevenKey"></label>
+<input id="elevenKey" type="password" placeholder="sk_...">
+<small data-i18n="optElevenKeyHint"></small>
+
+<label for="audioshakeKey" data-i18n="optAudioshakeKey"></label>
+<input id="audioshakeKey" type="password" placeholder="AudioShake API key">
+<small data-i18n="optAudioshakeKeyHint"></small>
+
+<label for="openaiKey" data-i18n="optOpenaiKey"></label>
+<input id="openaiKey" type="password" placeholder="sk-...">
+<small data-i18n="optOpenaiKeyHint"></small>
+
+<label for="deepseekKey" data-i18n="optDeepseekKey"></label>
+<input id="deepseekKey" type="password" placeholder="sk-...">
+<small data-i18n="optDeepseekKeyHint"></small>
+
+<label for="deepseekModel" data-i18n="optDeepseekModel"></label>
+<input id="deepseekModel" placeholder="deepseek-flash">
+
+<label for="translateModel" data-i18n="optTranslateModel"></label>
+<input id="translateModel" placeholder="llama-3.3-70b-versatile">
+<small data-i18n="optTranslateModelHint"></small>
+
+<label for="serverUrl" data-i18n="optServerUrl"></label>
+<input id="serverUrl" placeholder="http://127.0.0.1:8000">
+<small data-i18n="optServerUrlHint"></small>
+
+<label for="linkSpeed" data-i18n="optSpeed"></label>
+<select id="linkSpeed">
+  <option value="0" data-i18n="optSpeedAuto"></option>
+  <option value="1" data-i18n="optSpeed1"></option>
+  <option value="2" data-i18n="optSpeed2"></option>
+  <option value="3" data-i18n="optSpeed3"></option>
+  <option value="4" data-i18n="optSpeed4"></option>
+  <option value="6" data-i18n="optSpeed6"></option>
+  <option value="8" data-i18n="optSpeed8"></option>
+</select>
+<small data-i18n="optSpeedHint"></small>
+
+<label for="simpleMode" data-i18n="optSimple"></label>
+<select id="simpleMode">
+  <option value="false" data-i18n="optSimpleOff"></option>
+  <option value="true" data-i18n="optSimpleOn"></option>
+</select>
+<small data-i18n="optSimpleHint"></small>
+
+<label for="uncensored" data-i18n="optUncensored"></label>
+<select id="uncensored">
+  <option value="true" data-i18n="optUncensoredOn"></option>
+  <option value="false" data-i18n="optUncensoredOff"></option>
+</select>
+<small data-i18n="optUncensoredHint"></small>
+
+<label for="slang" data-i18n="optSlang"></label>
+<select id="slang">
+  <option value="true" data-i18n="optSlangOn"></option>
+  <option value="false" data-i18n="optSlangOff"></option>
+</select>
+<small data-i18n="optSlangHint"></small>
+
+<label for="customWords" data-i18n="optCustomWords"></label>
+<textarea id="customWords" rows="3" data-i18n-placeholder="optCustomWordsPh"></textarea>
+<small data-i18n="optCustomWordsHint"></small>
+
+<label for="language" data-i18n="optLanguage"></label>
+<select id="language">
+  <option value="auto" data-i18n="optLangAuto"></option>
+  <option value="ru" data-i18n="optLangRu"></option>
+  <option value="en" data-i18n="optLangEn"></option>
+</select>
+
+<label for="windowSec" data-i18n="optWindow"></label>
+<input id="windowSec" type="number" min="6" max="30" step="1">
+<small data-i18n="optWindowHint"></small>
+
+<label for="overlapSec" data-i18n="optOverlap"></label>
+<input id="overlapSec" type="number" min="1" max="15" step="0.5">
+
+<label for="syncOffsetMs" data-i18n="optOffset"></label>
+<input id="syncOffsetMs" type="number" min="-3000" max="3000" step="50">
+
+<button id="save" data-i18n="optSave"></button><span id="saved" data-i18n="optSaved"></span>
+<hr style="border:0;border-top:1px solid rgba(255,255,255,.1);margin:1.75rem 0 0">
+<button id="report" data-i18n="optReport" style="background:rgba(255,255,255,.12)"></button><span id="reportMsg" style="margin-left:.75rem;opacity:.8"></span>
+<small data-i18n="optReportHint"></small>
+</main>
+<script src="options.js"></script>
+</body>
+</html>

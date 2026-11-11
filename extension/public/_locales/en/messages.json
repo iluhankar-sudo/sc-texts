@@ -1,0 +1,11 @@
+{
+  "extName": {
+    "message": "sc texts"
+  },
+  "extDesc": {
+    "message": "Lyrics for SoundCloud tracks: ready-made lyrics from LRCLIB or speech recognition, karaoke and translation."
+  },
+  "cmdStart": {
+    "message": "Start recognition in the track tab"
+  }
+}

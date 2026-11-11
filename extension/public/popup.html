@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sc texts</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<div id="bg" class="bg" aria-hidden="true"></div>
+
+<header class="track">
+  <div id="art" class="art" aria-hidden="true">♪</div>
+  <div class="meta">
+    <div id="title" class="name">sc texts</div>
+    <div id="artist" class="sub"></div>
+  </div>
+  <button id="toggle" class="icon" hidden></button>
+  <button id="menu" class="icon ghost" data-i18n-title="settings" data-i18n-aria="settings">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+  </button>
+</header>
+
+<form id="form" class="link" autocomplete="off">
+  <input id="url" type="text" inputmode="url" spellcheck="false" data-i18n-placeholder="linkPlaceholder" data-i18n-aria="linkAria">
+  <button id="sound" type="button" class="mini" data-i18n-title="soundToggle" data-i18n-aria="soundToggle"></button>
+  <button id="go" type="submit" class="go" data-i18n-title="recognize" data-i18n-aria="recognize">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+  </button>
+</form>
+
+
+<div id="progress" class="progress" hidden>
+  <div class="bar"><i id="bar"></i></div>
+  <span id="ptime">0:00 / 0:00</span>
+</div>
+<div class="statusRow">
+  <div id="status" class="status"></div>
+  <button id="correct" class="linkBtn" hidden data-i18n="correctBtn" data-i18n-title="correctBtnTitle"></button>
+  <button id="rescan" class="linkBtn" hidden data-i18n-title="rescanTitle" data-i18n="rescan"></button>
+</div>
+<main id="list" class="lyrics"></main>
+<div class="actions">
+  <button id="translate" class="share" hidden>
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h8M8 3v2M5.5 5c.8 3 2.8 5.5 5.5 6.5M10.5 5c-.7 3.3-2.8 6-6.5 7.5"/><path d="m12 21 4.5-10L21 21M13.5 17.5h6"/></svg>
+    <span id="translateLabel" data-i18n="translate"></span>
+  </button>
+  <button id="copy" class="share" hidden>
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>
+    <span data-i18n="copy"></span>
+  </button>
+</div>
+<script src="popup.js"></script>
+</body>
+</html>

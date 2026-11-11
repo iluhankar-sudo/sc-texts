@@ -1,0 +1,683 @@
+/**
+ * Окошко под иконкой расширения.
+ * Распознавание — только по ссылке: расширение открывает трек, беззвучно слушает
+ * его до конца и сохраняет текст. 🎤 в шапке включает караоке: сохранённый текст
+ * подсвечивается синхронно с плеером, без захвата звука и без распознавания.
+ */
+import { normalizeConfig } from './core/config.ts';
+import { baseLang, detectScriptLang, langName } from './core/lang.ts';
+import { isSameTrack, parseTrackUrl } from './core/link.ts';
+import { translateLines } from './translate.ts';
+import { classifyCaptureError } from './core/errors.ts';
+import { applyCorrection } from './core/correct.ts';
+import { pruneCache, trackKey } from './core/cache.ts';
+import { activeIndex } from './core/sync.ts';
+import { dropTitleEcho } from './core/filter.ts';
+import type { PanelState, SavedResult } from './content/controller.ts';
+import { applyI18n, t, uiLang } from './core/i18n.ts';
+
+
+applyI18n();
+
+const SOURCE_NAMES: Record<string, string> = { lrclib: 'LRCLIB', genius: 'Genius', netease: 'NetEase', kugou: 'Kugou' };
+const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+const bgEl = $('bg');
+const artEl = $('art');
+const titleEl = $('title');
+const artistEl = $('artist');
+const toggle = $<HTMLButtonElement>('toggle');
+const form = $<HTMLFormElement>('form');
+const urlInput = $<HTMLInputElement>('url');
+const soundBtn = $<HTMLButtonElement>('sound');
+const goBtn = $<HTMLButtonElement>('go');
+const progressEl = $('progress');
+const barEl = $('bar');
+const ptimeEl = $('ptime');
+const statusEl = $('status');
+const listEl = $('list');
+const copyBtn = $<HTMLButtonElement>('copy');
+const rescanBtn = $<HTMLButtonElement>('rescan');
+const correctBtn = $<HTMLButtonElement>('correct');
+let hasDeepseek = false;
+let forceScan = false; // «Распознать по звуку»: не искать готовый текст
+const translateBtn = $<HTMLButtonElement>('translate');
+const translateLabel = $('translateLabel');
+let viewTexts: string[] = []; // строки, которые сейчас на экране
+
+const ICON_MIC =
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
+const ICON_STOP = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+const ICON_MUTED =
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m22 9-6 6M16 9l6 6"/></svg>';
+const ICON_SOUND =
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>';
+
+let activeTab: chrome.tabs.Tab | undefined;
+let captureTabId: number | null = null;
+let state: PanelState | null = null;
+let result: SavedResult | null = null;
+let monitor = false;
+let busy = false;
+let note = ''; // разовое сообщение (ошибка, «Скопировано»)
+let noteIsError = false;
+let lastKey = '';
+let lastArt: string | null | undefined;
+let lastTarget = -2;
+let orphanSince: number | null = null; // запись числится, а вкладка не отвечает — с какого момента
+let basePos: number | null = null; // позиция из последнего опроса
+let baseAt = 0; // performance.now() момента опроса
+let karaokeLines: { start: number; end: number; words: { start: number }[] }[] = [];
+let lastOn = -2;
+
+// Перевод
+const target = baseLang(navigator.language);
+const targetName = langName(target, uiLang());
+let translateOn = false;
+let translations = new Map<string, string>();
+const failed = new Set<string>();
+let trBusy = false;
+let trStatus = '';
+let trVersion = 0;
+
+const fmt = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(Math.max(0, t) % 60)).padStart(2, '0')}`;
+const isSC = (url?: string) => !!url && /^https:\/\/(www\.|m\.)?soundcloud\.com\//.test(url);
+
+function setNote(text: string, isError = false) {
+  note = text;
+  noteIsError = isError;
+}
+
+function emptyView(key: string, title: string, text: string) {
+  if (lastKey === key) return;
+  lastKey = key;
+  lastTarget = -2;
+  const d = document.createElement('div');
+  d.className = 'empty';
+  const b = document.createElement('b');
+  b.textContent = title;
+  const p = document.createElement('div');
+  p.textContent = text;
+  d.append(b, p);
+  listEl.replaceChildren(d);
+}
+
+interface ViewLine {
+  start: number;
+  end: number;
+  text: string;
+  words?: { word: string; start: number }[];
+}
+
+function renderLines(baseKey: string, lines: ViewLine[], intro: boolean, karaoke: boolean) {
+  listEl.classList.toggle('karaoke', karaoke);
+  viewTexts = lines.map((l) => l.text);
+  const key = `${baseKey}|tr:${translateOn ? trVersion : 'off'}`;
+  if (key === lastKey) return;
+  lastKey = key;
+  lastTarget = -2;
+  lastOn = -2;
+  const nodes: HTMLElement[] = [];
+  if (intro) {
+    const n = document.createElement('div');
+    n.className = 'line note';
+    n.textContent = '♪';
+    nodes.push(n);
+  }
+  for (const l of lines) {
+    const d = document.createElement('div');
+    d.className = 'line';
+    const words = karaoke ? (l.words ?? []).filter((w) => w.word) : [];
+    if (words.length) {
+      words.forEach((w, i) => {
+        const sp = document.createElement('span');
+        sp.className = 'w';
+        sp.textContent = (i ? ' ' : '') + w.word;
+        d.append(sp);
+      });
+    } else {
+      d.textContent = l.text;
+      if (karaoke) d.classList.add('plain');
+    }
+    const tr = translateOn ? translations.get(l.text) : undefined;
+    if (tr && tr.toLowerCase() !== l.text.toLowerCase()) {
+      const t = document.createElement('div');
+      t.className = 'tr';
+      t.textContent = tr;
+      d.append(t);
+    }
+    nodes.push(d);
+  }
+  listEl.replaceChildren(...nodes);
+  karaokeLines = karaoke ? lines.map((l) => ({ start: l.start, end: l.end, words: (l.words ?? []).filter((w) => w.word) })) : [];
+}
+
+/** Караоке: подсветка текущей строки и спетых слов; вызывается каждый кадр. */
+function karaokeFrame() {
+  requestAnimationFrame(karaokeFrame);
+  if (!karaokeLines.length || basePos === null || !state?.active) return;
+  const pos = basePos + (state.playing ? (performance.now() - baseAt) / 1000 : 0);
+  const lines = karaokeLines;
+  const idx = activeIndex(lines as never, pos, 1);
+  const offset = listEl.firstElementChild?.classList.contains('note') ? 1 : 0;
+  if (idx !== lastOn) {
+    lastOn = idx;
+    for (let i = 0; i < lines.length; i++) {
+      const el = listEl.children[i + offset] as HTMLElement | undefined;
+      if (!el) continue;
+      el.classList.toggle('on', i === idx);
+      el.classList.toggle('past', idx >= 0 ? i < idx : lines[i]!.end < pos);
+      if (i !== idx) el.querySelectorAll('.w.sung').forEach((w) => w.classList.remove('sung'));
+    }
+    const intro = offset ? (listEl.children[0] as HTMLElement) : null;
+    intro?.classList.toggle('on', idx < 0 && pos < (lines[0]?.start ?? 0));
+    const target = idx >= 0 ? idx + offset : pos < (lines[0]?.start ?? 0) ? 0 : -1;
+    const el = target >= 0 ? (listEl.children[target] as HTMLElement | undefined) : undefined;
+    if (el) listEl.scrollTo({ top: Math.max(0, el.offsetTop - listEl.clientHeight * 0.32), behavior: 'smooth' });
+  }
+  if (idx >= 0) {
+    const el = listEl.children[idx + offset] as HTMLElement | undefined;
+    const words = lines[idx]!.words;
+    if (el && words.length) {
+      const spans = el.children;
+      for (let i = 0; i < spans.length && i < words.length; i++) {
+        const sung = words[i]!.start <= pos;
+        if (spans[i]!.classList.contains('sung') !== sung) spans[i]!.classList.toggle('sung', sung);
+      }
+    }
+  }
+}
+
+function setHeader(title: string, artist: string, art: string | null) {
+  titleEl.textContent = title;
+  artistEl.textContent = artist;
+  if (art !== lastArt) {
+    lastArt = art;
+    const url = art ? `url("${art.replace(/"/g, '%22')}")` : '';
+    artEl.style.backgroundImage = url;
+    artEl.textContent = art ? '' : '♪';
+    bgEl.style.backgroundImage = url;
+    bgEl.classList.toggle('cover', !!art);
+  }
+}
+
+function render() {
+  const active = !!state?.active;
+  const linkJob = active && state!.mode === 'link';
+
+  // Шапка
+  if (active && (state!.title || linkJob)) {
+    setHeader(state!.title ?? t('openingTrack'), state!.artist ?? '', state!.artwork);
+  } else if (!active && result) {
+    setHeader(result.title ?? t('lastTrack'), result.artist ?? '', result.artwork);
+  } else {
+    setHeader('sc texts', t('tagline'), null);
+  }
+
+  // Кнопка ▶/■: остановка любого задания или живые субтитры на открытой вкладке SoundCloud
+  const canLive = !active && isSC(activeTab?.url);
+  toggle.hidden = !(active || canLive);
+  toggle.innerHTML = active ? ICON_STOP : ICON_MIC;
+  toggle.classList.toggle('on', active);
+  toggle.disabled = busy;
+  const tLabel = active ? t('stop') : t('karaokeForPlaying');
+  toggle.title = tLabel;
+  toggle.setAttribute('aria-label', tLabel);
+
+  goBtn.disabled = busy || linkJob;
+  urlInput.disabled = linkJob;
+  soundBtn.innerHTML = monitor ? ICON_SOUND : ICON_MUTED;
+  soundBtn.classList.toggle('on', monitor);
+  soundBtn.title = monitor ? t('soundOn') : t('soundOff');
+
+  // Прогресс
+  const dur = state?.duration ?? null;
+  progressEl.hidden = !(linkJob && dur);
+  if (linkJob && dur) {
+    const pos = Math.min(dur, Math.max(0, state!.pos ?? 0));
+    barEl.style.width = `${(pos / dur) * 100}%`;
+    ptimeEl.textContent = `${fmt(pos)} / ${fmt(dur)}`;
+  }
+
+  // Статус
+  let status = note;
+  if (!status && active && (linkJob || state!.lines.length > 0)) status = state!.message;
+  if (!status && !active && result) {
+    const found = result.source && result.source !== 'scan';
+    const src = found
+      ? t('srcFound', {
+          src: SOURCE_NAMES[result.source!] ?? result.source!,
+          timing: result.alignedBy === 'audio' ? t('alignedByAudio') : result.synced !== false ? t('synced') : t('notSynced'),
+        })
+      : result.engine === 'audioshake'
+          ? t('srcAudioshake')
+          : result.corrected
+            ? t('srcCorrected')
+            : t('srcScan');
+    status = t('lineCount', { src, n: result.lines.length });
+  }
+  rescanBtn.hidden = active || !result?.url;
+  // Готовый текст без таймингов: та же кнопка подгоняет его под звук (караоке с точным текстом).
+  const plainFound = !!result && !!result.source && result.source !== 'scan' && result.synced === false && result.alignedBy !== 'audio';
+  rescanBtn.textContent = plainFound ? t('syncByAudio') : t('rescan');
+  correctBtn.hidden =
+    active || !hasDeepseek || !result || (!!result.source && result.source !== 'scan') || !!result.corrected || result.lines.length === 0;
+  correctBtn.disabled = busy;
+  rescanBtn.disabled = busy;
+  if (!status && translateOn) status = trStatus;
+  statusEl.textContent = status;
+  statusEl.classList.toggle('err', noteIsError || state?.status === 'error');
+
+  // Текст
+  copyBtn.hidden = active || !result || result.lines.length === 0;
+  if (!(active && state!.lines.length) && !(!active && result?.lines.length)) viewTexts = [];
+  renderTranslateButton();
+  if (active) {
+    const lines = state!.lines;
+    if (lines.length === 0) {
+      if (linkJob) return emptyView('wait', '♪', t('waitLink'));
+      if (state!.pos === null) return emptyView('k-noplayer', t('karaoke'), t('playInPlayer'));
+      return emptyView(
+        'k-none',
+        t('notRecognized'),
+        t('notRecognizedHint'),
+      );
+    }
+    if (!linkJob) {
+      // Караоке: синхронная подсветка, позиция интерполируется в karaokeFrame().
+      // Текст без таймингов (из LRCLIB) показываем целиком, без подсветки.
+      const synced = state!.synced !== false;
+      renderLines(`k:${synced}:${lines.map((l) => `${l.start}|${l.text}`).join('\n')}`, lines, synced, synced);
+      return;
+    }
+    renderLines(`a:${lines.map((l) => `${l.start}|${l.text}`).join('\n')}`, lines, true, false);
+    // Прокрутка к последней распознанной строке
+    const target = lines.length;
+    if (target !== lastTarget) {
+      lastTarget = target;
+      const el = listEl.children[target] as HTMLElement | undefined;
+      if (el) listEl.scrollTo({ top: Math.max(0, el.offsetTop - listEl.clientHeight * 0.5), behavior: 'smooth' });
+    }
+    return;
+  }
+  if (result) {
+    if (result.lines.length === 0) return emptyView(`r0:${result.createdAt}`, t('noLyricsTitle'), t('noLyricsText'));
+    return renderLines(`r:${result.createdAt}`, result.lines, false, false);
+  }
+  emptyView(
+    'start',
+    t('emptyTitle'),
+    t('emptyText'),
+  );
+}
+
+async function refresh() {
+  const s = await chrome.storage.session.get('capture').catch(() => ({}) as Record<string, unknown>);
+  const cap = s.capture as { tabId: number } | undefined;
+  captureTabId = cap?.tabId ?? null;
+  const tabId = captureTabId ?? activeTab?.id;
+  state = null;
+  if (tabId !== undefined && tabId !== null) {
+    state = (await chrome.tabs.sendMessage(tabId, { type: 'GET_STATE' }).catch(() => null)) as PanelState | null;
+  }
+  // Запись числится, но вкладка давно не отвечает (её перезагрузили, закрыли, сломалась страница) —
+  // освобождаем захват, чтобы окошко не «зависло».
+  if (captureTabId !== null && !state?.active) {
+    orphanSince ??= Date.now();
+    if (Date.now() - orphanSince > 12000) {
+      orphanSince = null;
+      await chrome.runtime.sendMessage({ type: 'STOP_CAPTURE' }).catch(() => {});
+      captureTabId = null;
+      setNote(t('staleReset'));
+    }
+  } else orphanSince = null;
+  // Пока страница по ссылке загружается, контроллера ещё нет: показываем задание как активное.
+  if (captureTabId !== null && !state?.active) {
+    state = {
+      active: true, mode: 'link', status: 'listening', message: t('openingTrack'), lines: [], coverage: [],
+      pos: null, duration: null, title: null, artist: null, artwork: null, playing: false, fromCache: false,
+    };
+  }
+  if (state?.active && state.pos != null) {
+    basePos = state.pos;
+    baseAt = performance.now();
+  } else basePos = null;
+  if (!state?.active) karaokeLines = [];
+  result = ((await chrome.storage.local.get('lastResult')).lastResult as SavedResult | undefined) ?? null;
+  // Распознанные раньше тексты могли содержать строку с названием песни — прячем её и в них.
+  if (result && result.source !== 'lrclib') result = { ...result, lines: dropTitleEcho(result.lines, { title: result.title, artist: result.artist }) };
+  render();
+}
+
+async function startLink(e: Event) {
+  e.preventDefault();
+  if (busy) return;
+  // Пустое поле, а на вкладке открыт трек SoundCloud → распознаём его.
+  if (!urlInput.value.trim() && activeTab?.url && parseTrackUrl(activeTab.url)) urlInput.value = activeTab.url;
+  const link = parseTrackUrl(urlInput.value);
+  if (!link) {
+    setNote(t('notALink'), true);
+    return render();
+  }
+  if (!activeTab?.id) return;
+  busy = true;
+  setNote('');
+  render();
+  const skipLookup = forceScan;
+  forceScan = false;
+  try {
+    // Сначала ищем готовый текст (LRCLIB) — сканировать звук нужно, только если его нет.
+    if (!skipLookup && link.path) {
+      setNote(t('searching'));
+      render();
+      // Не ждём дольше 12 секунд (источников несколько, у самого поиска срок 8 с + название трека).
+      const found = (await Promise.race([
+        chrome.runtime.sendMessage({ type: 'LOOKUP_LINK', url: link.url, path: link.path }).catch(() => null),
+        new Promise((r) => setTimeout(() => r(null), 12000)),
+      ])) as { ok?: boolean } | null;
+      if (found?.ok) {
+        urlInput.value = '';
+        setNote('');
+        busy = false;
+        lastKey = '';
+        return await refresh();
+      }
+      setNote(t('noReadyScan'));
+      render();
+    }
+    // Что сейчас играет в этой вкладке?
+    const player = isSC(activeTab.url)
+      ? ((await chrome.tabs.sendMessage(activeTab.id, { type: 'PLAYER_INFO' }).catch(() => null)) as {
+          trackId: string | null;
+          playing: boolean;
+        } | null)
+      : null;
+    const sameTrack = !!player?.trackId && !!link.path && isSameTrack(player.trackId, link.path);
+    // Уже открыта страница этого трека (или он в плеере) — распознаём прямо здесь, без лишних кликов.
+    const onTrackPage = !!activeTab.url && !!link.path && parseTrackUrl(activeTab.url)?.path === link.path;
+
+    if (!sameTrack && !onTrackPage) {
+      // Иначе трек открывается в отдельной вкладке и сразу включается; распознавание стартует
+      // по клику на иконку там (так требует Chrome для записи звука вкладки).
+      const res = await chrome.runtime.sendMessage({ type: 'QUEUE_LINK', url: link.url, path: link.path, returnTabId: activeTab.id });
+      if (res && res.ok === false) setNote(res.error ?? t('cantOpenTab'), true);
+      else urlInput.value = '';
+      busy = false;
+      return render();
+    }
+
+    // streamId запрашивается здесь, в ответ на действие пользователя, для текущей вкладки.
+    let streamId: string;
+    try {
+      streamId = await getStreamId(activeTab.id);
+    } catch (err) {
+      if (!(err instanceof TabBusyError)) throw err;
+      // Вкладку уже записывает демонстрация экрана — распознаём в соседней вкладке.
+      const q = await chrome.runtime.sendMessage({ type: 'QUEUE_LINK', url: link.url, path: link.path, returnTabId: activeTab.id });
+      if (q && q.ok === false) setNote(q.error ?? t('cantOpenTab'), true);
+      else {
+        urlInput.value = '';
+        setNote(t('tabShared'));
+      }
+      busy = false;
+      return render();
+    }
+    const res = await chrome.runtime.sendMessage({
+      type: 'START_LINK',
+      tabId: activeTab.id,
+      streamId,
+      url: link.url,
+      path: link.path,
+      // Распознаём трек, который сейчас слушают, — звук не глушим.
+      monitor: monitor || sameTrack,
+    });
+    if (res && res.ok === false) setNote(res.error ?? t('cantStart'), true);
+    else {
+      urlInput.value = '';
+      setNote('');
+    }
+  } catch (err) {
+    const text = String(err);
+    setNote(classifyCaptureError(err) === 'notAllowed' ? t('tabNotUsable') : t('error', { msg: text.slice(0, 90) }), true);
+  }
+  busy = false;
+  lastKey = '';
+  await refresh();
+}
+
+class TabBusyError extends Error {}
+
+/**
+ * Идентификатор потока вкладки. Если вкладку держит наш прошлый захват — освобождаем и пробуем снова.
+ * Если её записывает кто-то ещё (демонстрация экрана «вкладка Chrome») — TabBusyError.
+ */
+async function getStreamId(tabId: number): Promise<string> {
+  try {
+    return await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
+  } catch (err) {
+    if (classifyCaptureError(err) !== 'busy') throw err;
+    const cap = (await chrome.storage.session.get('capture').catch(() => ({}) as Record<string, unknown>)).capture as
+      | { tabId: number }
+      | undefined;
+    if (cap?.tabId === tabId) {
+      await chrome.runtime.sendMessage({ type: 'STOP_CAPTURE' }).catch(() => {});
+      await new Promise((r) => setTimeout(r, 500));
+      try {
+        return await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
+      } catch (err2) {
+        if (classifyCaptureError(err2) === 'busy') throw new TabBusyError(String(err2));
+        throw err2;
+      }
+    }
+    throw new TabBusyError(String(err));
+  }
+}
+
+/** Запуск распознавания в отдельной вкладке (окошко открыто именно в ней). */
+async function startPending(p: { tabId: number; url: string; path: string | null; returnTabId: number | null }) {
+  busy = true;
+  setNote(t('startingRecognition'));
+  render();
+  try {
+    const streamId = await getStreamId(p.tabId);
+    const res = await chrome.runtime.sendMessage({
+      type: 'START_LINK',
+      tabId: p.tabId,
+      streamId,
+      url: p.url,
+      path: p.path,
+      monitor: false,
+      returnTabId: p.returnTabId,
+    });
+    if (res && res.ok === false) setNote(res.error ?? t('cantStart'), true);
+    else setNote(t('recognizingSilently'));
+  } catch (err) {
+    setNote(err instanceof TabBusyError ? t('tabSharedToo') : t('error', { msg: String(err).slice(0, 90) }), true);
+  }
+  busy = false;
+  lastKey = '';
+  await refresh();
+}
+
+async function toggleCapture() {
+  if (busy) return;
+  busy = true;
+  setNote('');
+  render();
+  try {
+    if (state?.active && state.mode === 'link') {
+      await chrome.runtime.sendMessage({ type: 'STOP_CAPTURE' });
+    } else if (state?.active && activeTab?.id) {
+      await chrome.tabs.sendMessage(activeTab.id, { type: 'KARAOKE_STOP' });
+    } else if (activeTab?.id) {
+      const res = await chrome.tabs.sendMessage(activeTab.id, { type: 'KARAOKE_START' });
+      if (res && res.ok === false) setNote(res.error ?? t('cantKaraoke'), true);
+    }
+  } catch (err) {
+    setNote(/Receiving end|Could not establish/i.test(String(err)) ? t('reloadSC') : t('error', { msg: String(err).slice(0, 90) }), true);
+  }
+  busy = false;
+  lastKey = '';
+  await refresh();
+}
+
+form.addEventListener('submit', (e) => void startLink(e));
+// Исправить уже распознанный текст через DeepSeek (тайминги строк сохраняются).
+correctBtn.addEventListener('click', async () => {
+  if (!result || busy) return;
+  busy = true;
+  setNote(t('correcting'));
+  render();
+  const lines = result.lines.map((l) => ({ ...l, words: l.words ?? [] }));
+  const res = await chrome.runtime
+    .sendMessage({ type: 'CORRECT_LYRICS', lines: lines.map((l) => ({ text: l.text })), title: result.title, artist: result.artist })
+    .catch((e) => ({ ok: false, error: String(e) }));
+  const fixed = res?.ok ? applyCorrection(lines, res.raw) : null;
+  if (fixed) {
+    const updated = { ...result, lines: fixed, corrected: true, createdAt: Date.now() };
+    const path = result.url ? parseTrackUrl(result.url)?.path : null;
+    const store = await chrome.storage.local.get('results');
+    const all = (store.results as Record<string, SavedResult> | undefined) ?? {};
+    if (path) all[trackKey(path)] = updated;
+    await chrome.storage.local.set({ lastResult: updated, results: pruneCache(all) });
+    setNote('');
+  } else {
+    setNote(res?.ok ? t('correctNoChange') : t('correctFailed', { msg: String(res?.error ?? '').slice(0, 80) }), true);
+  }
+  busy = false;
+  lastKey = '';
+  await refresh();
+});
+
+rescanBtn.addEventListener('click', () => {
+  if (!result?.url || busy) return;
+  urlInput.value = result.url;
+  forceScan = true;
+  form.requestSubmit();
+});
+urlInput.addEventListener('input', () => {
+  if (note) setNote('');
+});
+toggle.addEventListener('click', () => void toggleCapture());
+$('menu').addEventListener('click', () => void chrome.runtime.openOptionsPage());
+soundBtn.addEventListener('click', async () => {
+  monitor = !monitor;
+  await chrome.storage.local.set({ monitor });
+  render();
+});
+copyBtn.addEventListener('click', async () => {
+  if (!result) return;
+  const head = [result.artist, result.title].filter(Boolean).join(' — ');
+  const body = result.lines
+    .map((l) => {
+      const tr = translateOn ? translations.get(l.text) : undefined;
+      return tr ? `${l.text}\n${tr}` : l.text;
+    })
+    .join(translateOn ? '\n\n' : '\n');
+  const text = (head ? `${head}\n\n` : '') + body;
+  try {
+    await navigator.clipboard.writeText(text);
+    setNote(t('copied'));
+  } catch {
+    setNote(t('copyFailed'), true);
+  }
+  render();
+  setTimeout(() => {
+    setNote('');
+    render();
+  }, 2000);
+});
+
+async function init() {
+  [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const saved = await chrome.storage.local.get(['language', 'monitor', 'translations', 'deepseekKey']);
+  hasDeepseek = typeof saved.deepseekKey === 'string' && saved.deepseekKey.trim() !== '';
+  translations = new Map(Object.entries((saved.translations as Record<string, string> | undefined) ?? {}));
+  monitor = saved.monitor === true;
+  // Если на вкладке открыт трек SoundCloud, подставляем его ссылку.
+  if (activeTab?.url && parseTrackUrl(activeTab.url)) urlInput.placeholder = t('linkPlaceholderThis');
+  await refresh();
+  urlInput.focus();
+  // Отдельная вкладка распознавания ждёт клика по иконке — это он.
+  const pend = (await chrome.storage.session.get('pending')).pending as
+    | { tabId: number; url: string; path: string | null; returnTabId: number | null }
+    | undefined;
+  if (pend && activeTab?.id === pend.tabId) void startPending(pend);
+  else if (pend) {
+    setNote(t('pendingElsewhere'));
+    render();
+  }
+  setInterval(() => void refresh(), 250);
+  requestAnimationFrame(karaokeFrame);
+}
+
+const isForeign = (t: string) => {
+  const src = detectScriptLang(t);
+  return !!src && src !== target;
+};
+
+/** Кнопка «Перевести»: видна, когда на экране есть строки не на языке браузера. */
+function renderTranslateButton() {
+  const foreign = viewTexts.filter(isForeign);
+  translateBtn.hidden = foreign.length === 0;
+  // Обе кнопки не помещаются с подписями — «Копировать» остаётся значком.
+  copyBtn.classList.toggle('iconOnly', !translateBtn.hidden);
+  copyBtn.title = t('copyText');
+  if (translateBtn.hidden) return;
+  const untranslated = foreign.some((x) => !translations.has(x) && !failed.has(x));
+  translateBtn.disabled = trBusy;
+  translateBtn.classList.toggle('alt', translateOn && !untranslated);
+  translateLabel.textContent = trBusy
+    ? t('translating')
+    : !translateOn
+      ? t('translateTo', { lang: targetName })
+      : untranslated
+        ? t('translateNew')
+        : t('hideTranslation');
+}
+
+/** Переводит строки на экране, которых ещё нет в переводах. Вызывается только по кнопке. */
+async function translateVisible() {
+  if (trBusy) return;
+  const missing = [...new Set(viewTexts)].filter((x) => isForeign(x) && !translations.has(x));
+  if (missing.length === 0) return;
+  trBusy = true;
+  trStatus = t('translatingTo', { lang: targetName });
+  render();
+  try {
+    const cfg = normalizeConfig(await chrome.storage.local.get(null));
+    const res = await translateLines(missing, target, cfg, (p) => {
+      trStatus = t('downloadingTranslator', { p: Math.round(p * 100) });
+      statusEl.textContent = trStatus;
+    });
+    for (const [k, v] of res) translations.set(k, v);
+    missing.forEach((x) => failed.delete(x));
+    // Храним последние 3000 переводов.
+    const entries = [...translations.entries()].slice(-3000);
+    translations = new Map(entries);
+    await chrome.storage.local.set({ translations: Object.fromEntries(entries) });
+    trStatus = '';
+  } catch (err) {
+    missing.forEach((x) => failed.add(x));
+    trStatus = t('translateFailed', { msg: String(err).replace(/^Error: /, '').slice(0, 90) });
+  }
+  trBusy = false;
+  trVersion++;
+  render();
+}
+
+translateBtn.addEventListener('click', () => {
+  const untranslated = viewTexts.some((x) => isForeign(x) && !translations.has(x));
+  if (translateOn && !untranslated) {
+    translateOn = false; // «Скрыть перевод»
+    trStatus = '';
+    render();
+    return;
+  }
+  translateOn = true;
+  failed.clear();
+  render();
+  // Запуск прямо в обработчике клика: встроенному переводчику Chrome можно скачать модель.
+  void translateVisible();
+});
+
+void init();
