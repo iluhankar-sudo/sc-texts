@@ -102,3 +102,10 @@ jobs:
           else
             gh release create "$tag" sc-texts.zip --title "sc texts ${ver}" --notes "$notes" --latest
           fi
+      - name: Убрать старые выпуски «сборка N»
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --limit 100 --json tagName -q '.[].tagName' | grep -E -- '-build\.[0-9]+$' | while read -r t; do
+            echo "удаляю $t"; gh release delete "$t" --cleanup-tag -y
+          done || true
