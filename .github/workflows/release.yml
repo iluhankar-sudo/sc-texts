@@ -93,8 +93,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           ver=$(node -p "require('./extension/public/manifest.json').version")
-          tag="v${ver}-build.${{ github.run_number }}"
-          gh release create "$tag" sc-texts.zip \
-            --title "sc texts ${ver} (сборка ${{ github.run_number }})" \
-            --notes "Автосборка из ${GITHUB_SHA::7}. Скачайте sc-texts.zip, распакуйте и загрузите папку в chrome://extensions (режим разработчика → «Загрузить распакованное»)." \
-            --latest
+          tag="v${ver}"
+          notes="Скачайте sc-texts.zip, распакуйте и загрузите папку в chrome://extensions (режим разработчика → «Загрузить распакованное»). Обновлено из ${GITHUB_SHA::7}."
+          # Один выпуск на версию: новая сборка заменяет архив в нём, без «сборки N» в названии.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" sc-texts.zip --clobber
+            gh release edit "$tag" --title "sc texts ${ver}" --notes "$notes" --latest
+          else
+            gh release create "$tag" sc-texts.zip --title "sc texts ${ver}" --notes "$notes" --latest
+          fi
