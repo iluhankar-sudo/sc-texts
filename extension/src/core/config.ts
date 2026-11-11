@@ -27,6 +27,23 @@ export const DEFAULT_CONFIG: Config = {
 declare const __DEFAULT_API_KEY__: string;
 const BUILT_IN_KEY = typeof __DEFAULT_API_KEY__ !== 'undefined' ? __DEFAULT_API_KEY__ : '';
 
+// Сервер-посредник (Cloudflare Worker с ключом владельца) — тоже подставляется при сборке
+// (переменные PROXY_URL и APP_TOKEN). Через него работают те, у кого нет своего ключа.
+declare const __PROXY_URL__: string;
+declare const __APP_TOKEN__: string;
+export const PROXY_URL = (typeof __PROXY_URL__ !== 'undefined' ? __PROXY_URL__ : '').replace(/\/+$/, '');
+const APP_TOKEN = typeof __APP_TOKEN__ !== 'undefined' ? __APP_TOKEN__ : '';
+
+/**
+ * Куда слать запросы к Groq (распознавание, запасной перевод):
+ * свой ключ (в настройках или вшитый) — напрямую; иначе — через посредника; иначе — некуда (null).
+ */
+export function groqEndpoint(cfg: Pick<Config, 'apiUrl' | 'apiKey'>): { url: string; headers: Record<string, string>; viaProxy: boolean } | null {
+  if (cfg.apiKey) return { url: cfg.apiUrl, headers: { Authorization: `Bearer ${cfg.apiKey}` }, viaProxy: false };
+  if (PROXY_URL) return { url: `${PROXY_URL}/v1`, headers: APP_TOKEN ? { 'X-SC-Texts': APP_TOKEN } : {}, viaProxy: true };
+  return null;
+}
+
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
 function num(v: unknown, fallback: number): number {

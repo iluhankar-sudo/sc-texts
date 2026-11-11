@@ -10,6 +10,7 @@ import { buildPrompt, fromCloud, fromElevenLabs, normLang, pickByConfidence } fr
 import { fromAudioShakeJson, fromSrt } from './core/audioshake.ts';
 import type { Config, TranscribeResponse } from './core/types.ts';
 import { t } from './core/i18n.ts';
+import { groqEndpoint } from './core/config.ts';
 
 interface PendingChunk {
   epoch: number;
@@ -470,9 +471,12 @@ async function transcribeOnce(c: PendingChunk, lang: string): Promise<Transcribe
   if (cfg!.mode === 'cloud') {
     // whisper-1 — это Whisper large-v2 у OpenAI: на песнях он ошибается реже, чем v3.
     const openai = cfg!.apiModel === 'whisper-1';
-    const apiUrl = openai ? 'https://api.openai.com/v1' : cfg!.apiUrl;
-    const apiKey = openai ? cfg!.openaiKey : cfg!.apiKey;
-    if (!apiKey) throw new Error(t(openai ? 'noOpenaiKey' : 'noApiKey'));
+    // Groq: свой ключ — напрямую, без ключа — через сервер-посредник (если он вшит при сборке).
+    const groq = openai ? null : groqEndpoint(cfg!);
+    if (openai && !cfg!.openaiKey) throw new Error(t('noOpenaiKey'));
+    if (!openai && !groq) throw new Error(t('noApiKey'));
+    const apiUrl = openai ? 'https://api.openai.com/v1' : groq!.url;
+    const authHeaders: Record<string, string> = openai ? { Authorization: `Bearer ${cfg!.openaiKey}` } : groq!.headers;
     // Финальный проход у Groq — всегда самой точной моделью.
     const model = c.final && !openai && cfg!.apiModel === 'whisper-large-v3-turbo' ? 'whisper-large-v3' : cfg!.apiModel;
     form.append('model', model);
@@ -485,7 +489,7 @@ async function transcribeOnce(c: PendingChunk, lang: string): Promise<Transcribe
     if (prompt) form.append('prompt', prompt);
     const r = await fetch(`${apiUrl}/audio/transcriptions`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}` },
+      headers: authHeaders,
       body: form,
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 160)}`);

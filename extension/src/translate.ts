@@ -1,3 +1,4 @@
+import { groqEndpoint } from './core/config.ts';
 /**
  * Перевод строк песни на язык браузера.
  * 1) Встроенный переводчик Chrome (Translator API, Chrome 138+): работает на устройстве.
@@ -51,16 +52,15 @@ function getBuiltin(src: string, tgt: string, onProgress?: (p: number) => void):
 }
 
 async function translateViaApi(texts: string[], tgt: string, cfg: Config): Promise<string[]> {
-  if (cfg.mode !== 'cloud' || !cfg.apiKey) {
-    throw new Error(t('noTranslator'));
-  }
+  const groq = cfg.mode === 'cloud' ? groqEndpoint(cfg) : null;
+  if (!groq) throw new Error(t('noTranslator'));
   const target = langName(tgt, 'en');
   const out: string[] = [];
   for (let i = 0; i < texts.length; i += 40) {
     const batch = texts.slice(i, i + 40);
-    const r = await fetch(`${cfg.apiUrl}/chat/completions`, {
+    const r = await fetch(`${groq.url}/chat/completions`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${cfg.apiKey}`, 'Content-Type': 'application/json' },
+      headers: { ...groq.headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: cfg.translateModel,
         temperature: 0.2,

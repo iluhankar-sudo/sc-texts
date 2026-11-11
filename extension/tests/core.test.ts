@@ -539,3 +539,14 @@ test('alignLyrics: real lyrics get timings from recognition', () => {
   // чужая песня — не подгоняем
   assert.equal(alignLyrics(['совсем другие слова здесь'], rec), null);
 });
+
+import { groqEndpoint } from '../src/core/config.ts';
+
+test('groqEndpoint: own key goes direct, no key and no proxy → null', () => {
+  assert.deepEqual(groqEndpoint({ apiUrl: 'https://api.groq.com/openai/v1', apiKey: 'gsk_x' }), {
+    url: 'https://api.groq.com/openai/v1',
+    headers: { Authorization: 'Bearer gsk_x' },
+    viaProxy: false,
+  });
+  assert.equal(groqEndpoint({ apiUrl: 'https://api.groq.com/openai/v1', apiKey: '' }), null); // в тестах посредник не вшит
+});

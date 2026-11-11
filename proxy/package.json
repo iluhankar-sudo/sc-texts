@@ -1,0 +1,13 @@
+{
+  "name": "sc-texts-proxy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "test": "node --test test/proxy.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.36.0"
+  }
+}

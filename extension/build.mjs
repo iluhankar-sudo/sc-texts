@@ -24,6 +24,9 @@ const options = {
   define: {
     'process.env.NODE_ENV': '"production"',
     __DEFAULT_API_KEY__: JSON.stringify(process.env.DEFAULT_API_KEY ?? ''),
+    // Сервер-посредник для тех, у кого нет своего ключа (вшивается в сборки для других).
+    __PROXY_URL__: JSON.stringify(process.env.PROXY_URL ?? ''),
+    __APP_TOKEN__: JSON.stringify(process.env.APP_TOKEN ?? ''),
   },
   logLevel: 'info',
 };

@@ -24,7 +24,8 @@
     "https://api.audioshake.ai/*",
     "https://genius.com/*",
     "https://music.163.com/*",
-    "http://lyrics.kugou.com/*"
+    "http://lyrics.kugou.com/*",
+    "https://*.workers.dev/*"
   ],
   "background": {
     "service_worker": "background.js"

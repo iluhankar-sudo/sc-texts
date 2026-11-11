@@ -1,0 +1,94 @@
+# Автосборка sc texts.
+# При каждом push в master:
+#   1) тесты посредника и (если заданы секреты Cloudflare) его развёртывание с ключом Groq;
+#   2) тесты расширения, сборка БЕЗ ключа (с адресом посредника) и выкладка архива в Releases.
+#
+# Настройка (Settings → Secrets and variables → Actions), один раз:
+#   секреты:   GROQ_KEY               — ключ Groq (останется только на Cloudflare)
+#              CLOUDFLARE_API_TOKEN   — токен Cloudflare с правом «Edit Cloudflare Workers»
+#              CLOUDFLARE_ACCOUNT_ID  — ID аккаунта Cloudflare
+#              APP_TOKEN              — любая строка (необязательно; см. proxy/README.md)
+#   переменная: PROXY_URL             — адрес посредника (необязательно: берётся из развёртывания)
+name: Сборка и выпуск
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  proxy:
+    name: Посредник (Cloudflare Worker)
+    runs-on: ubuntu-latest
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      GROQ_KEY: ${{ secrets.GROQ_KEY }}
+      APP_TOKEN: ${{ secrets.APP_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Тесты посредника
+        run: node --test proxy/test/proxy.test.js
+      - name: Развернуть на Cloudflare
+        id: deploy
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.GROQ_KEY != ''
+        working-directory: proxy
+        run: |
+          npm install --no-audit --no-fund
+          npx wrangler deploy | tee deploy.log
+          printf '%s' "$GROQ_KEY" | npx wrangler secret put GROQ_KEY
+          if [ -n "$APP_TOKEN" ]; then printf '%s' "$APP_TOKEN" | npx wrangler secret put APP_TOKEN; fi
+          url=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)
+          echo "Посредник: $url"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+      - name: Посредник не развёрнут
+        if: env.CLOUDFLARE_API_TOKEN == '' || env.GROQ_KEY == ''
+        run: echo "::notice::Секреты CLOUDFLARE_API_TOKEN / GROQ_KEY не заданы — посредник не развёрнут (расширение будет просить свой ключ)."
+
+  extension:
+    name: Расширение
+    needs: proxy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Зависимости
+        working-directory: extension
+        run: npm install --no-audit --no-fund
+      - name: Тесты
+        working-directory: extension
+        run: npm test
+      - name: Сборка (без ключа, с адресом посредника)
+        working-directory: extension
+        env:
+          PROXY_URL: ${{ vars.PROXY_URL || needs.proxy.outputs.url }}
+          APP_TOKEN: ${{ secrets.APP_TOKEN }}
+        run: |
+          echo "Посредник в сборке: ${PROXY_URL:-нет}"
+          node build.mjs
+          if grep -rqE 'gsk_[A-Za-z0-9]{20,}' dist; then echo "::error::В сборке оказался ключ Groq"; exit 1; fi
+          cd dist && zip -qr ../../sc-texts.zip . -x '*.map'
+      - name: Выложить в Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver=$(node -p "require('./extension/public/manifest.json').version")
+          tag="v${ver}-build.${{ github.run_number }}"
+          gh release create "$tag" sc-texts.zip \
+            --title "sc texts ${ver} (сборка ${{ github.run_number }})" \
+            --notes "Автосборка из ${GITHUB_SHA::7}. Скачайте sc-texts.zip, распакуйте и загрузите папку в chrome://extensions (режим разработчика → «Загрузить распакованное»)." \
+            --latest

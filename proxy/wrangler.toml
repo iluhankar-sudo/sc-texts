@@ -1,0 +1,19 @@
+# Сервер-посредник sc texts: держит ключ Groq у себя, расширение распознаёт через него.
+# Ключ задаётся секретом: npx wrangler secret put GROQ_KEY (или автоматически из GitHub Actions).
+name = "sc-texts-proxy"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+[vars]
+# Какие модели разрешено вызывать через посредника.
+ALLOWED_TRANSCRIBE_MODELS = "whisper-large-v3,whisper-large-v3-turbo"
+ALLOWED_CHAT_MODELS = "llama-3.3-70b-versatile,llama-3.1-8b-instant"
+
+# Ограничение запросов с одного адреса: 40 в минуту (трек на ×3 — это ~10–15 запросов).
+[[ratelimits]]
+name = "LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 40
+  period = 60
