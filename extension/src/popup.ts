@@ -169,10 +169,12 @@ function scrollLineTo(el: HTMLElement, frac: number) {
 }
 
 /** Караоке: подсветка текущей строки и спетых слов; вызывается каждый кадр. */
+const KARAOKE_LEAD = 0.25;
 function karaokeFrame() {
   requestAnimationFrame(karaokeFrame);
   if (!karaokeLines.length || basePos === null || !state?.active) return;
-  const pos = basePos + (state.playing ? (performance.now() - baseAt) / 1000 : 0);
+  // Строка загорается чуть раньше первого слова — глазу нужно мгновение, чтобы её прочитать.
+  const pos = basePos + (state.playing ? (performance.now() - baseAt) / 1000 : 0) + KARAOKE_LEAD;
   const lines = karaokeLines;
   const idx = activeIndex(lines as never, pos, 1);
   const offset = listEl.firstElementChild?.classList.contains('note') ? 1 : 0;

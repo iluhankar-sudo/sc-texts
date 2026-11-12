@@ -56,6 +56,10 @@ export function startStreaming(audio: MediaStreamTrack, onEnded: () => void) {
     port = null;
   });
   const sr = ctx.sampleRate;
+  // Звук блока прозвучал раньше, чем сработал onaudioprocess: ScriptProcessor держит ещё один
+  // буфер, плюс задержка самого захвата вкладки. Без поправки при ускорении ×2.5–3 строки
+  // получали время позже настоящего (на ускорении каждая миллисекунда задержки — ~3 мс трека).
+  const lagMs = (4096 / sr) * 1000 + (ctx.baseLatency || 0) * 1000 + CAPTURE_LAG_MS;
   sp.onaudioprocess = (e) => {
     if (!port) return;
     const a = e.inputBuffer.getChannelData(0);
@@ -66,7 +70,7 @@ export function startStreaming(audio: MediaStreamTrack, onEnded: () => void) {
       pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
     }
     try {
-      port.postMessage({ sr, w: Date.now(), d: toBase64(pcm) });
+      port.postMessage({ sr, w: Date.now() - lagMs, d: toBase64(pcm) });
     } catch {
       port = null;
     }
@@ -98,3 +102,6 @@ function toBase64(pcm: Int16Array): string {
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(bin);
 }
+
+/** Задержка захвата звука вкладки (getDisplayMedia) до попадания в страницу, мс — оценка. */
+const CAPTURE_LAG_MS = 60;

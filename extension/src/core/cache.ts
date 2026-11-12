@@ -27,6 +27,8 @@ export interface CachedResult {
   corrected?: boolean;
   /** Кто распознал финальный текст. */
   engine?: 'whisper' | 'audioshake';
+  /** 2 — тайминги распознавания с поправкой на задержку захвата звука (старые записаны чуть позже). */
+  timing?: number;
 }
 
 export const CACHE_LIMIT = 30;

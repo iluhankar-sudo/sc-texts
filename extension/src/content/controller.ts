@@ -148,7 +148,9 @@ export class Controller {
     };
   };
 
-  getSnapshot = () => this.state;
+  /** Снимок для окошка: позиция трека — на момент запроса, а не последнего тика. */
+  getSnapshot = () =>
+    this.state.active && this.state.pos !== null && this.trackId ? { ...this.state, pos: this.clock.now(Date.now()) } : this.state;
 
   private set(patch: Partial<PanelState>) {
     this.state = { ...this.state, ...patch };
@@ -514,7 +516,7 @@ export class Controller {
           ? estimateTimings(hit.lines.map((l) => l.text), p.duration!)
           : hit.source === 'lrclib'
             ? hit.lines
-            : dropTitleEcho(hit.lines, { title: hit.title, artist: hit.artist })
+            : shiftOldScan(hit, dropTitleEcho(hit.lines, { title: hit.title, artist: hit.artist }))
         : [];
       this.saved = false;
       this.set({
@@ -708,6 +710,7 @@ export class Controller {
       synced: true,
       corrected: this.corrected,
       engine: this.engine,
+      timing: 2,
     };
     try {
       const r = await chrome.storage.local.get('results');
@@ -831,4 +834,19 @@ export class Controller {
     this.set({ lines, coverage: addRange(this.state.coverage, trusted) });
     if (msg.final && msg.engine) this.engine = msg.engine;
   }
+}
+
+/**
+ * Тексты, распознанные до поправки на задержку захвата (timing < 2), записаны примерно на полсекунды
+ * позже звука — в караоке сдвигаем их раньше. Готовые тексты с таймингами (LRCLIB, NetEase, Kugou) не трогаем.
+ */
+const OLD_SCAN_SHIFT = 0.5;
+function shiftOldScan<L extends { start: number; end: number; words?: { start: number; end: number }[] }>(
+  hit: { source?: string; alignedBy?: string; timing?: number },
+  lines: L[],
+): L[] {
+  const recognized = !hit.source || hit.source === 'scan' || hit.alignedBy === 'audio';
+  if (!recognized || (hit.timing ?? 0) >= 2) return lines;
+  const sh = (x: number) => Math.max(0, x - OLD_SCAN_SHIFT);
+  return lines.map((l) => ({ ...l, start: sh(l.start), end: sh(l.end), words: l.words?.map((w) => ({ ...w, start: sh(w.start), end: sh(w.end) })) }));
 }
