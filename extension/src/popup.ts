@@ -37,6 +37,10 @@ const statusEl = $('status');
 const listEl = $('list');
 const copyBtn = $<HTMLButtonElement>('copy');
 const pinBtn = $<HTMLButtonElement>('pin');
+const karaokeBtn = $<HTMLButtonElement>('karaoke');
+const karaokeTip = $('karaokeTip');
+/** Вкладка, где идёт караоке, запущенное кнопкой 🎤. */
+let karaokeTabId: number | null = null;
 const pinTip = $('pinTip');
 const correctBtn = $<HTMLButtonElement>('correct');
 let hasDeepseek = false;
@@ -214,10 +218,9 @@ function render() {
     setHeader('sc texts', t('tagline'), null);
   }
 
-  // Кнопка ▶/■: остановка любого задания или живые субтитры на открытой вкладке SoundCloud
-  const canLive = !active && isSC(activeTab?.url);
-  toggle.hidden = !(active || canLive);
-  toggle.innerHTML = active ? ICON_STOP : ICON_MIC;
+  // Кнопка ■ в шапке: только остановка идущего задания (караоке теперь — кнопкой 🎤 внизу).
+  toggle.hidden = !active;
+  toggle.innerHTML = ICON_STOP;
   toggle.classList.toggle('on', active);
   toggle.disabled = busy;
   const tLabel = active ? t('stop') : t('karaokeForPlaying');
@@ -271,6 +274,15 @@ function render() {
   pinBtn.classList.toggle('on', pinned);
   pinTip.textContent = pinned ? t('pinnedTip') : t('pinTip');
   pinBtn.setAttribute('aria-label', pinTip.textContent);
+  // 🎤 Караоке: появляется, когда текст готов. Без таймингов — сначала синхронизация по звуку.
+  const karaokeOn = active && state!.mode === 'karaoke';
+  const hasLyrics = !active && !!result?.url && result.lines.length > 0 && !!parseTrackUrl(result.url)?.path;
+  karaokeBtn.hidden = !(karaokeOn || hasLyrics);
+  karaokeBtn.classList.toggle('on', karaokeOn);
+  karaokeBtn.disabled = busy;
+  const needsSync = !karaokeOn && !!result && result.synced === false && result.alignedBy !== 'audio';
+  karaokeTip.textContent = karaokeOn ? t('karaokeStopTip') : needsSync ? t('karaokeSyncTip') : t('karaokeTip');
+  karaokeBtn.setAttribute('aria-label', karaokeTip.textContent);
   if (!(active && state!.lines.length) && !(!active && result?.lines.length)) viewTexts = [];
   renderTranslateButton();
   if (active) {
@@ -313,13 +325,20 @@ function render() {
 }
 
 async function refresh() {
-  const s = await chrome.storage.session.get('capture').catch(() => ({}) as Record<string, unknown>);
+  const s = await chrome.storage.session.get(['capture', 'karaoke']).catch(() => ({}) as Record<string, unknown>);
   const cap = s.capture as { tabId: number } | undefined;
   captureTabId = cap?.tabId ?? null;
-  const tabId = captureTabId ?? activeTab?.id;
+  karaokeTabId = (s.karaoke as { tabId: number } | undefined)?.tabId ?? null;
+  const tabId = captureTabId ?? karaokeTabId ?? activeTab?.id;
   state = null;
   if (tabId !== undefined && tabId !== null) {
     state = (await chrome.tabs.sendMessage(tabId, { type: 'GET_STATE' }).catch(() => null)) as PanelState | null;
+  }
+  // Караоке во вкладке закончилось (вкладку закрыли или остановили) — забываем её.
+  if (karaokeTabId !== null && !captureTabId && !(state?.active && state.mode === 'karaoke') && !(s.karaoke as { pending?: boolean }).pending) {
+    karaokeTabId = null;
+    await chrome.storage.session.remove('karaoke').catch(() => {});
+    if (tabId !== activeTab?.id && activeTab?.id) state = (await chrome.tabs.sendMessage(activeTab.id, { type: 'GET_STATE' }).catch(() => null)) as PanelState | null;
   }
   // Запись числится, но вкладка давно не отвечает (её перезагрузили, закрыли, сломалась страница) —
   // освобождаем захват, чтобы окошко не «зависло».
@@ -367,7 +386,7 @@ async function startLink(e: Event) {
   const skipLookup = forceScan;
   forceScan = false;
   try {
-    if (link.path) {
+    if (link.path && !skipLookup) {
       const store = await chrome.storage.local.get('results');
       const pinned = (store.results as Record<string, SavedResult> | undefined)?.[trackKey(link.path)];
       if (pinned?.pinned && pinned.lines.length > 0) {
@@ -558,6 +577,35 @@ correctBtn.addEventListener('click', async () => {
     setNote(res?.ok ? t('correctNoChange') : t('correctFailed', { msg: String(res?.error ?? '').slice(0, 80) }), true);
   }
   busy = false;
+  lastKey = '';
+  await refresh();
+});
+
+karaokeBtn.addEventListener('click', async () => {
+  if (busy) return;
+  if (state?.active && state.mode === 'karaoke') {
+    const tabId = karaokeTabId ?? activeTab?.id;
+    if (tabId) await chrome.tabs.sendMessage(tabId, { type: 'KARAOKE_STOP' }).catch(() => {});
+    await chrome.storage.session.remove('karaoke').catch(() => {});
+    lastKey = '';
+    return void (await refresh());
+  }
+  const path = result?.url ? parseTrackUrl(result.url)?.path : null;
+  if (!result?.url || !path) return;
+  if (result.synced === false && result.alignedBy !== 'audio') {
+    // Текст без таймингов (например, Genius): подгоняем его под звук, дальше караоке работает само.
+    urlInput.value = result.url;
+    forceScan = true;
+    setNote(t('karaokeSyncing'));
+    form.requestSubmit();
+    return;
+  }
+  busy = true;
+  render();
+  const res = await chrome.runtime.sendMessage({ type: 'KARAOKE_OPEN', url: result.url, path }).catch((e) => ({ ok: false, error: String(e) }));
+  busy = false;
+  if (res && res.ok === false) setNote(res.error ?? t('cantKaraoke'), true);
+  else setNote(t('karaokeStarted'));
   lastKey = '';
   await refresh();
 });

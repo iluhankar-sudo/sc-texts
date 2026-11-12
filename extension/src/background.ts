@@ -14,6 +14,7 @@ import { glossaryFor } from './core/vocab.ts';
  * окошко, открытое в этой вкладке, само запускает START_LINK, после чего пользователя
  * возвращают в его вкладку. Когда трек дослушан, вкладка распознавания закрывается.
  */
+import { isSameTrack, parseTrackUrl } from './core/link.ts';
 import { normalizeConfig } from './core/config.ts';
 import type { Config } from './core/types.ts';
 import { findLyrics, metaNote, providerLog, saveFound, trackMeta } from './lyrics.ts';
@@ -244,6 +245,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   // Новая страница во вкладке захвата спрашивает, что делать
+  // Кнопка 🎤 в окошке: караоке для готового текста — во вкладке, где этот трек, или в новой.
+  if (msg?.type === 'KARAOKE_OPEN') {
+    return reply(openKaraoke(String(msg.url), String(msg.path)), sendResponse);
+  }
+
   // Кнопка «Начать распознавание» на странице: пользователь разрешил запись в окне Chrome,
   // звук пришлёт сама страница.
   if (msg?.type === 'PAGE_CAPTURE' && sender.tab?.id !== undefined) {
@@ -262,7 +268,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg?.type === 'CONTENT_READY' && sender.tab?.id !== undefined) {
-    void getCapture().then((cap) => {
+    void Promise.all([getCapture(), chrome.storage.session.get('karaoke')]).then(async ([cap, ks]) => {
+      const k = ks.karaoke as { tabId: number; path: string; pending?: boolean } | undefined;
+      if (!cap && k?.pending && k.tabId === sender.tab!.id) {
+        await chrome.storage.session.set({ karaoke: { tabId: k.tabId, path: k.path } });
+        sendResponse({ capture: null, karaoke: { path: k.path } });
+        return;
+      }
       if (cap && cap.tabId === sender.tab!.id && cap.source === 'page') {
         // Страница перезагрузилась — её запись звука оборвалась. Задание снова ждёт кнопки.
         void (async () => {
@@ -329,3 +341,26 @@ chrome.runtime.onInstalled.addListener(async () => {
 
 // Заголовок Referer для NetEase (правило живёт до перезапуска браузера — ставим при каждом старте).
 void installHeaderRules();
+
+/** Караоке по кнопке 🎤: ищем вкладку SoundCloud с этим треком (лучше — где он уже играет), иначе открываем его. */
+async function openKaraoke(url: string, path: string): Promise<{ tabId: number; created: boolean }> {
+  const tabs = await chrome.tabs.query({ url: ['https://soundcloud.com/*'] }).catch(() => [] as chrome.tabs.Tab[]);
+  let best: { id: number; windowId: number; score: number } | null = null;
+  for (const tab of tabs) {
+    if (tab.id === undefined || tab.discarded) continue;
+    const info = (await chrome.tabs.sendMessage(tab.id, { type: 'PLAYER_INFO' }).catch(() => null)) as { trackId: string | null; playing: boolean } | null;
+    const inPlayer = !!info?.trackId && isSameTrack(info.trackId, path);
+    const onPage = !!tab.url && parseTrackUrl(tab.url)?.path === path;
+    if (!inPlayer && !onPage) continue;
+    const score = inPlayer && info!.playing ? 3 : inPlayer ? 2 : 1;
+    if (!best || score > best.score) best = { id: tab.id, windowId: tab.windowId, score };
+  }
+  if (best) {
+    await chrome.tabs.sendMessage(best.id, { type: 'KARAOKE_START', path, autoplay: true });
+    await chrome.storage.session.set({ karaoke: { tabId: best.id, path } });
+    return { tabId: best.id, created: false };
+  }
+  const tab = await chrome.tabs.create({ url, active: true });
+  await chrome.storage.session.set({ karaoke: { tabId: tab.id!, path, pending: true } });
+  return { tabId: tab.id!, created: true };
+}

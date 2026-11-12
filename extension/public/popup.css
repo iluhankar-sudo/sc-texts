@@ -142,11 +142,14 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; width: 0; heig
 .statusRow .linkBtn { padding-top: 4px; }
 
 /* Закреп текста за треком */
-.actions .share.pin { position: relative; left: auto; bottom: auto; transform: none; } /* без сдвига базового .share */
+.actions .share.tipbtn { position: relative; left: auto; bottom: auto; transform: none; } /* без сдвига базового .share */
 .actions .share.pin.on { background: var(--accent, #ff7a00); color: #1a0d00; }
 .actions .share.pin.on svg path:first-child { fill: currentColor; }
-.actions .share.pin .tip { display: block !important; position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+.actions .share.tipbtn .tip { display: block !important; position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
   white-space: nowrap; font-size: 11.5px; font-weight: 500; line-height: 1; padding: 6px 9px; border-radius: 8px;
   background: rgba(20,14,12,.92); color: rgba(255,255,255,.9); box-shadow: 0 4px 14px rgba(0,0,0,.35);
   opacity: 0; pointer-events: none; transition: opacity .15s ease; }
-.actions .share.pin:hover .tip, .actions .share.pin:focus-visible .tip { opacity: 1; }
+.actions .share.tipbtn:hover .tip, .actions .share.tipbtn:focus-visible .tip { opacity: 1; }
+/* подсказка у крайней правой кнопки — к правому краю, чтобы не вылезать за окошко */
+.actions .share.tipbtn:last-child .tip { left: auto; right: 0; transform: none; }
+.actions .share#karaoke.on { background: var(--accent, #ff7a00); color: #1a0d00; }

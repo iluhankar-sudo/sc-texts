@@ -1,7 +1,8 @@
 import { normalizeConfig } from '../core/config.ts';
 import type { ChunkResultMessage } from '../core/types.ts';
 import { Controller } from './controller.ts';
-import { readPlayer } from './player.ts';
+import { clickHeroPlay, clickPlayControl, readPlayer } from './player.ts';
+import { isSameTrack } from '../core/link.ts';
 import { requestTabAudio, startStreaming, stopPageCapture } from './page-capture.ts';
 import { t } from '../core/i18n.ts';
 import { extensionAlive } from './alive.ts';
@@ -20,6 +21,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         .get(null)
         .then((raw) => {
           controller.start(normalizeConfig(raw), { mode: 'karaoke' });
+          if (msg.autoplay && msg.path) playForKaraoke(String(msg.path));
           sendResponse({ ok: true });
         })
         .catch((e) => sendResponse({ ok: false, error: String(e) }));
@@ -66,12 +68,70 @@ function askForJob(retries: number) {
     .then((res) => {
       const cap = res?.capture;
       if (cap) controller.start(normalizeConfig(cap.config), { mode: cap.mode, url: cap.url, path: cap.path, speed: cap.speed });
-      else if (res?.pending) showHint();
+      else if (res?.karaoke) {
+        // Вкладка открыта кнопкой 🎤: караоке для этого трека.
+        void chrome.storage.local.get(null).then((raw) => {
+          controller.start(normalizeConfig(raw), { mode: 'karaoke' });
+          playForKaraoke(String(res.karaoke.path));
+        });
+      } else if (res?.pending) showHint();
       else if (retries > 0) setTimeout(() => askForJob(retries - 1), 1500); // вкладку могли зарегистрировать чуть позже
     })
     .catch(() => {});
 }
 askForJob(4);
+
+/**
+ * Караоке по кнопке 🎤: включить этот трек (одно нажатие — кнопка play у SoundCloud переключатель).
+ * В новой вкладке Chrome может не дать включить звук без клика по странице — тогда маленькая
+ * плашка с кнопкой «Включить трек».
+ */
+function playForKaraoke(path: string) {
+  const norm = (x: string) => x.toLowerCase().replace(/\/+$/, '');
+  const ours = () => {
+    const p = readPlayer();
+    return !!p.trackId && isSameTrack(p.trackId, path);
+  };
+  const press = () => {
+    const p = readPlayer();
+    if (ours()) {
+      if (!p.playing) clickPlayControl();
+    } else if (norm(location.pathname) === norm(path)) clickHeroPlay();
+  };
+  setTimeout(press, 600);
+  setTimeout(() => {
+    if (!(ours() && readPlayer().playing)) showKaraokeHint(press);
+  }, 3500);
+}
+
+let karaokeHost: HTMLElement | null = null;
+function showKaraokeHint(press: () => void) {
+  if (karaokeHost) return;
+  karaokeHost = document.createElement('div');
+  const root = karaokeHost.attachShadow({ mode: 'open' });
+  root.innerHTML = `
+    <style>
+      .box { position: fixed; top: 12px; right: 16px; z-index: 2147483647; width: 300px; padding: 14px 16px;
+        border-radius: 14px; background: rgba(36, 36, 38, .96); color: #f2f2f2; border: 1px solid rgba(255,255,255,.08);
+        box-shadow: 0 8px 24px rgba(0,0,0,.35); font: 13.5px/1.4 -apple-system, "Segoe UI", Roboto, system-ui, sans-serif; }
+      b { display: block; font-size: 14px; font-weight: 600; margin-bottom: 3px; }
+      span { color: rgba(255,255,255,.62); }
+      button { display: block; width: 100%; margin-top: 10px; padding: 10px 12px; border-radius: 10px; font: 500 14px/1 inherit;
+        font-family: inherit; color: #f2f2f2; cursor: pointer; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.14); }
+      button:hover { background: rgba(255,255,255,.16); }
+    </style>
+    <div class="box" role="status"><b></b><span></span><button></button></div>`;
+  root.querySelector('b')!.textContent = t('karaokeHintTitle');
+  root.querySelector('span')!.textContent = t('karaokeHintText');
+  const btn = root.querySelector('button')!;
+  btn.textContent = t('karaokePlay');
+  btn.addEventListener('click', () => {
+    press();
+    karaokeHost?.remove();
+    karaokeHost = null;
+  });
+  document.documentElement.append(karaokeHost);
+}
 
 /**
  * Подсказка во вкладке, открытой по ссылке: одна кнопка «Начать распознавание».

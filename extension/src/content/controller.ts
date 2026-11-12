@@ -700,10 +700,13 @@ export class Controller {
     try {
       const r = await chrome.storage.local.get('results');
       const all = (r.results as Record<string, SavedResult> | undefined) ?? {};
-      // Закреплённый пользователем текст не перезаписываем.
-      if (this.trackId && result.lines.length > 0 && !all[trackKey(this.trackId)]?.pinned) all[trackKey(this.trackId)] = result;
+      const prev = this.trackId ? all[trackKey(this.trackId)] : undefined;
+      // Закреплённый текст не перезаписываем — кроме синхронизации его же по звуку (закреп сохраняется).
+      if (this.trackId && result.lines.length > 0 && (!prev?.pinned || this.alignedFrom)) {
+        all[trackKey(this.trackId)] = prev?.pinned ? { ...result, pinned: true } : result;
+      }
       this.cache = pruneCache(all);
-      await chrome.storage.local.set({ results: this.cache, lastResult: result });
+      await chrome.storage.local.set({ results: this.cache, lastResult: prev?.pinned && this.alignedFrom ? { ...result, pinned: true } : result });
     } catch {
       /* хранилище недоступно — не страшно */
     }
