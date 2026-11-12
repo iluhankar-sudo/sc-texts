@@ -15,7 +15,7 @@
  */
 import { PlaybackClock } from '../core/clock.ts';
 import { DEFAULT_CONFIG } from '../core/config.ts';
-import { cleanSegments, dropRepeatedRuns, dropTitleEcho, isTitleEcho } from '../core/filter.ts';
+import { cleanSegments, dropRepeatedRuns, dropTitleEcho, isTitleEcho, tightenStart } from '../core/filter.ts';
 import { pruneCache, trackKey, type CachedResult } from '../core/cache.ts';
 import { applyCorrection } from '../core/correct.ts';
 import { isSameTrack } from '../core/link.ts';
@@ -846,7 +846,10 @@ function shiftOldScan<L extends { start: number; end: number; words?: { start: n
   lines: L[],
 ): L[] {
   const recognized = !hit.source || hit.source === 'scan' || hit.alignedBy === 'audio';
-  if (!recognized || (hit.timing ?? 0) >= 2) return lines;
+  if (!recognized) return lines;
+  // Строки, начавшиеся «с проигрыша» (растянутое первое слово), — с первого звучащего слова.
+  lines = lines.map((l) => (l.words?.length ? (tightenStart(l as never) as unknown as L) : l));
+  if ((hit.timing ?? 0) >= 2) return lines;
   const sh = (x: number) => Math.max(0, x - OLD_SCAN_SHIFT);
   return lines.map((l) => ({ ...l, start: sh(l.start), end: sh(l.end), words: l.words?.map((w) => ({ ...w, start: sh(w.start), end: sh(w.end) })) }));
 }

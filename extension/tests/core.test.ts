@@ -580,3 +580,16 @@ test('trackUrlFromHtml: адрес трека из страницы коротк
   assert.deepEqual(trackUrlFromHtml('<meta property="og:url" content="https://soundcloud.com/a/b?si=1">')?.path, '/a/b');
   assert.equal(trackUrlFromHtml('<html>no</html>'), null);
 });
+
+test('tightenStart: строка начинается с голоса, а не с проигрыша', async () => {
+  const { tightenStart } = await import('../src/core/filter.ts');
+  const w = (word: string, start: number, end: number) => ({ word, start, end, prob: 1 });
+  // Первое слово «растянуто» на 8 секунд проигрыша.
+  const l = tightenStart({ start: 0, end: 10, text: 'Я иду домой', words: [w('Я', 0, 8.2), w('иду', 8.3, 8.6), w('домой', 8.6, 9.2)] });
+  assert.ok(l.start > 7.5 && l.start < 8.2, String(l.start));
+  // Сегмент начался раньше первого слова — начало по первому слову.
+  assert.equal(tightenStart({ start: 2, end: 6, text: 'да', words: [w('да', 4, 4.3)] }).start, 4);
+  // Нормальная строка не меняется.
+  const ok = { start: 1, end: 3, text: 'ok go', words: [w('ok', 1, 1.3), w('go', 1.4, 1.8)] };
+  assert.equal(tightenStart(ok), ok);
+});

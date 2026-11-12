@@ -83,9 +83,26 @@ export function cleanSegments(segs: RawSegment[], maxNoSpeech = 0.6): Line[] {
     if (isHallucination(s, text, maxNoSpeech)) continue;
     if (JUNK.some((r) => r.test(text))) continue;
     if (isPromptEcho(text)) continue; // модель повторила подсказку со словарём
-    out.push({ start: s.start, end: s.end, text, words: s.words ?? [] });
+    out.push(tightenStart({ start: s.start, end: s.end, text, words: s.words ?? [] }));
   }
   return out;
+}
+
+/**
+ * Whisper часто начинает строку с начала тишины или проигрыша: первое слово получает время
+ * «от конца прошлой фразы» и тянется несколько секунд, а строка загорается до появления голоса.
+ * Слишком длинное первое слово укорачиваем до правдоподобной длины, и строка начинается с него.
+ */
+export function tightenStart(l: Line): Line {
+  const words = l.words ?? [];
+  const w0 = words[0];
+  if (!w0) return l;
+  const maxDur = Math.min(1.4, 0.3 + 0.09 * w0.word.length);
+  let start = w0.start;
+  if (w0.end - w0.start > maxDur) start = w0.end - maxDur;
+  start = Math.max(l.start, start);
+  if (start <= l.start + 0.05) return l;
+  return { ...l, start, words: [{ ...w0, start }, ...words.slice(1)] };
 }
 
 /** Удаляет серии из более чем maxRun одинаковых подряд строк (зацикливание модели). */
