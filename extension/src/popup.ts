@@ -36,6 +36,7 @@ const ptimeEl = $('ptime');
 const statusEl = $('status');
 const listEl = $('list');
 const copyBtn = $<HTMLButtonElement>('copy');
+const copyTip = $('copyTip');
 const pinBtn = $<HTMLButtonElement>('pin');
 const karaokeBtn = $<HTMLButtonElement>('karaoke');
 const karaokeTip = $('karaokeTip');
@@ -641,6 +642,12 @@ copyBtn.addEventListener('click', async () => {
   try {
     await navigator.clipboard.writeText(text);
     setNote(t('copied'));
+    copyTip.textContent = t('copied');
+    copyBtn.classList.add('flash');
+    setTimeout(() => {
+      copyBtn.classList.remove('flash');
+      copyTip.textContent = t('copyText');
+    }, 1400);
   } catch {
     setNote(t('copyFailed'), true);
   }
@@ -685,7 +692,8 @@ function renderTranslateButton() {
   translateBtn.hidden = foreign.length === 0;
   // Обе кнопки не помещаются с подписями — «Копировать» остаётся значком.
   copyBtn.classList.toggle('iconOnly', !translateBtn.hidden);
-  copyBtn.title = t('copyText');
+  copyBtn.classList.toggle('tipbtn', !translateBtn.hidden); // без подписи — быстрая подсказка, как у соседних кнопок
+  if (!copyBtn.classList.contains('flash')) copyTip.textContent = t('copyText');
   if (translateBtn.hidden) return;
   const untranslated = foreign.some((x) => !translations.has(x) && !failed.has(x));
   translateBtn.disabled = trBusy;

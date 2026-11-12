@@ -153,3 +153,13 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; width: 0; heig
 /* подсказка у крайней правой кнопки — к правому краю, чтобы не вылезать за окошко */
 .actions .share.tipbtn:last-child .tip { left: auto; right: 0; transform: none; }
 .actions .share#karaoke.on { background: var(--accent, #ff7a00); color: #1a0d00; }
+
+/* Компактные кнопки и аккуратные мгновенные подсказки */
+.actions { gap: 8px; bottom: 16px; }
+.actions .share { padding: 8px 14px; font-size: 13px; gap: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
+.actions .share.iconOnly { padding: 8px; }
+.actions .share svg { flex: none; }
+.actions .share:not(.tipbtn) .tip { display: none !important; }
+.actions .share.tipbtn .tip { bottom: calc(100% + 6px); font-size: 11px; font-weight: 600; padding: 4px 7px; border-radius: 6px;
+  background: rgba(15,10,9,.94); color: #fff; box-shadow: 0 3px 10px rgba(0,0,0,.35); transition: none; }
+.actions .share.tipbtn.flash .tip { opacity: 1; }
