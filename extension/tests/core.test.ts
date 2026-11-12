@@ -550,3 +550,11 @@ test('groqEndpoint: own key goes direct, no key and no proxy → null', () => {
   });
   assert.equal(groqEndpoint({ apiUrl: 'https://api.groq.com/openai/v1', apiKey: '' }), null); // в тестах посредник не вшит
 });
+
+test('pruneCache keeps pinned lyrics beyond the limit', () => {
+  const map: Record<string, { createdAt: number; pinned?: boolean }> = {};
+  for (let i = 0; i < 10; i++) map[`t${i}`] = { createdAt: i };
+  map.t0!.pinned = true; // самый старый, но закреплён
+  const out = pruneCache(map, 3);
+  assert.deepEqual(Object.keys(out).sort(), ['t0', 't7', 't8', 't9']);
+});

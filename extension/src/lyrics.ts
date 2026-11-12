@@ -187,6 +187,7 @@ export async function findLyrics(meta: TrackMeta, url: string | null): Promise<C
 export async function saveFound(path: string, result: CachedResult, setLast: boolean) {
   const r = await chrome.storage.local.get('results');
   const all = (r.results as Record<string, CachedResult> | undefined) ?? {};
+  if (all[trackKey(path)]?.pinned) return; // закреплённый пользователем текст не трогаем
   all[trackKey(path)] = result;
   await chrome.storage.local.set({ results: pruneCache(all), ...(setLast ? { lastResult: result } : {}) });
 }

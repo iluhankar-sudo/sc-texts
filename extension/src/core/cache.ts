@@ -17,6 +17,8 @@ export interface CachedResult {
   createdAt: number;
   /** Откуда текст: распознан по звуку или взят из LRCLIB. */
   source?: 'scan' | 'lrclib' | 'genius' | 'netease' | 'kugou';
+  /** Пользователь закрепил текст за треком: по этой ссылке он показывается сразу, без поиска и распознавания. */
+  pinned?: boolean;
   /** Готовый текст без таймингов, которому тайминги подобраны по распознанному звуку. */
   alignedBy?: 'audio';
   /** Есть ли тайминги строк (без них караоке не подсвечивает строки). */
@@ -35,9 +37,12 @@ export function trackKey(trackId: string): string {
 }
 
 /** Оставляет max самых свежих записей. */
-export function pruneCache<T extends { createdAt: number }>(map: Record<string, T>, max = CACHE_LIMIT): Record<string, T> {
+export function pruneCache<T extends { createdAt: number; pinned?: boolean }>(map: Record<string, T>, max = CACHE_LIMIT): Record<string, T> {
+  // Закреплённые тексты не вытесняются никогда; лимит — для остальных.
   const entries = Object.entries(map).sort((a, b) => b[1].createdAt - a[1].createdAt);
-  return Object.fromEntries(entries.slice(0, max));
+  const pinned = entries.filter(([, v]) => v.pinned);
+  const rest = entries.filter(([, v]) => !v.pinned).slice(0, max);
+  return Object.fromEntries([...pinned, ...rest]);
 }
 
 /** Доля длительности трека, покрытая распознанными окнами. */

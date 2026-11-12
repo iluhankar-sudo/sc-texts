@@ -36,7 +36,8 @@ const ptimeEl = $('ptime');
 const statusEl = $('status');
 const listEl = $('list');
 const copyBtn = $<HTMLButtonElement>('copy');
-const rescanBtn = $<HTMLButtonElement>('rescan');
+const pinBtn = $<HTMLButtonElement>('pin');
+const pinTip = $('pinTip');
 const correctBtn = $<HTMLButtonElement>('correct');
 let hasDeepseek = false;
 let forceScan = false; // «Распознать по звуку»: не искать готовый текст
@@ -255,20 +256,21 @@ function render() {
             : t('srcScan');
     status = t('lineCount', { src, n: result.lines.length });
   }
-  rescanBtn.hidden = active || !result?.url;
-  // Готовый текст без таймингов: та же кнопка подгоняет его под звук (караоке с точным текстом).
-  const plainFound = !!result && !!result.source && result.source !== 'scan' && result.synced === false && result.alignedBy !== 'audio';
-  rescanBtn.textContent = plainFound ? t('syncByAudio') : t('rescan');
   correctBtn.hidden =
     active || !hasDeepseek || !result || (!!result.source && result.source !== 'scan') || !!result.corrected || result.lines.length === 0;
   correctBtn.disabled = busy;
-  rescanBtn.disabled = busy;
   if (!status && translateOn) status = trStatus;
   statusEl.textContent = status;
   statusEl.classList.toggle('err', noteIsError || state?.status === 'error');
 
   // Текст
   copyBtn.hidden = active || !result || result.lines.length === 0;
+  // Закреп: текст остаётся за треком, и по этой ссылке больше не нужно искать или распознавать.
+  pinBtn.hidden = copyBtn.hidden || !result?.url || !parseTrackUrl(result.url)?.path;
+  const pinned = !!result?.pinned;
+  pinBtn.classList.toggle('on', pinned);
+  pinTip.textContent = pinned ? t('pinnedTip') : t('pinTip');
+  pinBtn.setAttribute('aria-label', pinTip.textContent);
   if (!(active && state!.lines.length) && !(!active && result?.lines.length)) viewTexts = [];
   renderTranslateButton();
   if (active) {
@@ -365,6 +367,18 @@ async function startLink(e: Event) {
   const skipLookup = forceScan;
   forceScan = false;
   try {
+    if (link.path) {
+      const store = await chrome.storage.local.get('results');
+      const pinned = (store.results as Record<string, SavedResult> | undefined)?.[trackKey(link.path)];
+      if (pinned?.pinned && pinned.lines.length > 0) {
+        await chrome.storage.local.set({ lastResult: pinned });
+        urlInput.value = '';
+        setNote(t('pinnedUsed'));
+        busy = false;
+        lastKey = '';
+        return await refresh();
+      }
+    }
     // Сначала ищем готовый текст (LRCLIB) — сканировать звук нужно, только если его нет.
     if (!skipLookup && link.path) {
       setNote(t('searching'));
@@ -548,11 +562,21 @@ correctBtn.addEventListener('click', async () => {
   await refresh();
 });
 
-rescanBtn.addEventListener('click', () => {
-  if (!result?.url || busy) return;
-  urlInput.value = result.url;
-  forceScan = true;
-  form.requestSubmit();
+pinBtn.addEventListener('click', async () => {
+  const path = result?.url ? parseTrackUrl(result.url)?.path : null;
+  if (!path) return;
+  // Берём сохранённый результат целиком (в окошке он мог быть подчищен для показа).
+  const store = await chrome.storage.local.get(['results', 'lastResult']);
+  const results = (store.results as Record<string, SavedResult> | undefined) ?? {};
+  const key = trackKey(path);
+  const base = (store.lastResult as SavedResult | undefined)?.url === result!.url ? (store.lastResult as SavedResult) : (results[key] ?? result!);
+  const pinned = !base.pinned;
+  const saved = { ...base, pinned };
+  results[key] = saved;
+  await chrome.storage.local.set({ results: pruneCache(results), lastResult: saved });
+  setNote(pinned ? t('pinnedDone') : t('unpinnedDone'));
+  lastKey = '';
+  await refresh();
 });
 urlInput.addEventListener('input', () => {
   if (note) setNote('');

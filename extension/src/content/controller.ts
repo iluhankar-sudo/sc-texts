@@ -700,7 +700,8 @@ export class Controller {
     try {
       const r = await chrome.storage.local.get('results');
       const all = (r.results as Record<string, SavedResult> | undefined) ?? {};
-      if (this.trackId && result.lines.length > 0) all[trackKey(this.trackId)] = result;
+      // Закреплённый пользователем текст не перезаписываем.
+      if (this.trackId && result.lines.length > 0 && !all[trackKey(this.trackId)]?.pinned) all[trackKey(this.trackId)] = result;
       this.cache = pruneCache(all);
       await chrome.storage.local.set({ results: this.cache, lastResult: result });
     } catch {
