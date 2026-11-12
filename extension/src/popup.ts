@@ -114,6 +114,11 @@ interface ViewLine {
   words?: { word: string; start: number }[];
 }
 
+/** Длинные тире (— и –) в тексте песни заменяем обычным дефисом. */
+function dashes(s: string): string {
+  return s.replace(/[\u2014\u2013\u2012\u2015]/g, '-');
+}
+
 function renderLines(baseKey: string, lines: ViewLine[], intro: boolean, karaoke: boolean) {
   listEl.classList.toggle('karaoke', karaoke);
   viewTexts = lines.map((l) => l.text);
@@ -137,18 +142,18 @@ function renderLines(baseKey: string, lines: ViewLine[], intro: boolean, karaoke
       words.forEach((w, i) => {
         const sp = document.createElement('span');
         sp.className = 'w';
-        sp.textContent = (i ? ' ' : '') + w.word;
+        sp.textContent = (i ? ' ' : '') + dashes(w.word);
         d.append(sp);
       });
     } else {
-      d.textContent = l.text;
+      d.textContent = dashes(l.text);
       if (karaoke) d.classList.add('plain');
     }
     const tr = translateOn ? translations.get(l.text) : undefined;
     if (tr && tr.toLowerCase() !== l.text.toLowerCase()) {
       const t = document.createElement('div');
       t.className = 'tr';
-      t.textContent = tr;
+      t.textContent = dashes(tr);
       d.append(t);
     }
     nodes.push(d);
@@ -197,8 +202,8 @@ function karaokeFrame() {
 }
 
 function setHeader(title: string, artist: string, art: string | null) {
-  titleEl.textContent = title;
-  artistEl.textContent = artist;
+  titleEl.textContent = dashes(title);
+  artistEl.textContent = dashes(artist);
   if (art !== lastArt) {
     lastArt = art;
     const url = art ? `url("${art.replace(/"/g, '%22')}")` : '';
@@ -644,11 +649,11 @@ soundBtn.addEventListener('click', async () => {
 });
 copyBtn.addEventListener('click', async () => {
   if (!result) return;
-  const head = [result.artist, result.title].filter(Boolean).join(' — ');
+  const head = dashes([result.artist, result.title].filter(Boolean).join(' - '));
   const body = result.lines
     .map((l) => {
       const tr = translateOn ? translations.get(l.text) : undefined;
-      return tr ? `${l.text}\n${tr}` : l.text;
+      return dashes(tr ? `${l.text}\n${tr}` : l.text);
     })
     .join(translateOn ? '\n\n' : '\n');
   const text = (head ? `${head}\n\n` : '') + body;
