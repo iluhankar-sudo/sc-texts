@@ -157,6 +157,17 @@ function renderLines(baseKey: string, lines: ViewLine[], intro: boolean, karaoke
   karaokeLines = karaoke ? lines.map((l) => ({ start: l.start, end: l.end, words: (l.words ?? []).filter((w) => w.word) })) : [];
 }
 
+/**
+ * Прокручивает список так, чтобы строка оказалась на заданной доле высоты окна текста.
+ * Положение считаем относительно самого списка: offsetTop отсчитывается от страницы
+ * (вместе с шапкой), из-за чего строки уезжали слишком высоко.
+ */
+function scrollLineTo(el: HTMLElement, frac: number) {
+  const y = listEl.scrollTop + el.getBoundingClientRect().top - listEl.getBoundingClientRect().top;
+  const top = Math.max(0, Math.round(y - listEl.clientHeight * frac));
+  if (Math.abs(top - listEl.scrollTop) > 2) listEl.scrollTo({ top, behavior: 'smooth' });
+}
+
 /** Караоке: подсветка текущей строки и спетых слов; вызывается каждый кадр. */
 function karaokeFrame() {
   requestAnimationFrame(karaokeFrame);
@@ -178,7 +189,7 @@ function karaokeFrame() {
     intro?.classList.toggle('on', idx < 0 && pos < (lines[0]?.start ?? 0));
     const target = idx >= 0 ? idx + offset : pos < (lines[0]?.start ?? 0) ? 0 : -1;
     const el = target >= 0 ? (listEl.children[target] as HTMLElement | undefined) : undefined;
-    if (el) listEl.scrollTo({ top: Math.max(0, el.offsetTop - listEl.clientHeight * 0.32), behavior: 'smooth' });
+    if (el) scrollLineTo(el, 0.32);
   }
   // Подсвечивается вся текущая строка целиком (без слов по одному).
 }
@@ -300,7 +311,7 @@ function render() {
     if (target !== lastTarget) {
       lastTarget = target;
       const el = listEl.children[target] as HTMLElement | undefined;
-      if (el) listEl.scrollTo({ top: Math.max(0, el.offsetTop - listEl.clientHeight * 0.5), behavior: 'smooth' });
+      if (el) scrollLineTo(el, 0.5);
     }
     return;
   }
