@@ -179,17 +179,7 @@ function karaokeFrame() {
     const el = target >= 0 ? (listEl.children[target] as HTMLElement | undefined) : undefined;
     if (el) listEl.scrollTo({ top: Math.max(0, el.offsetTop - listEl.clientHeight * 0.32), behavior: 'smooth' });
   }
-  if (idx >= 0) {
-    const el = listEl.children[idx + offset] as HTMLElement | undefined;
-    const words = lines[idx]!.words;
-    if (el && words.length) {
-      const spans = el.children;
-      for (let i = 0; i < spans.length && i < words.length; i++) {
-        const sung = words[i]!.start <= pos;
-        if (spans[i]!.classList.contains('sung') !== sung) spans[i]!.classList.toggle('sung', sung);
-      }
-    }
-  }
+  // Подсвечивается вся текущая строка целиком (без слов по одному).
 }
 
 function setHeader(title: string, artist: string, art: string | null) {
@@ -281,7 +271,7 @@ function render() {
   karaokeBtn.classList.toggle('on', karaokeOn);
   karaokeBtn.disabled = busy;
   const needsSync = !karaokeOn && !!result && result.synced === false && result.alignedBy !== 'audio';
-  karaokeTip.textContent = karaokeOn ? t('karaokeStopTip') : needsSync ? t('karaokeSyncTip') : t('karaokeTip');
+  karaokeTip.textContent = karaokeOn ? t('karaokeStopTip') : needsSync ? t('karaokeApproxTip') : t('karaokeTip');
   karaokeBtn.setAttribute('aria-label', karaokeTip.textContent);
   if (!(active && state!.lines.length) && !(!active && result?.lines.length)) viewTexts = [];
   renderTranslateButton();
@@ -388,11 +378,12 @@ async function startLink(e: Event) {
   try {
     if (link.path && !skipLookup) {
       const store = await chrome.storage.local.get('results');
-      const pinned = (store.results as Record<string, SavedResult> | undefined)?.[trackKey(link.path)];
-      if (pinned?.pinned && pinned.lines.length > 0) {
-        await chrome.storage.local.set({ lastResult: pinned });
+      // Текст этого трека уже есть (найден или распознан раньше) — показываем его, ничего не распознаём заново.
+      const saved = (store.results as Record<string, SavedResult> | undefined)?.[trackKey(link.path)];
+      if (saved && saved.lines.length > 0) {
+        await chrome.storage.local.set({ lastResult: saved });
         urlInput.value = '';
-        setNote(t('pinnedUsed'));
+        setNote(saved.pinned ? t('pinnedUsed') : t('savedUsed'));
         busy = false;
         lastKey = '';
         return await refresh();
@@ -592,14 +583,6 @@ karaokeBtn.addEventListener('click', async () => {
   }
   const path = result?.url ? parseTrackUrl(result.url)?.path : null;
   if (!result?.url || !path) return;
-  if (result.synced === false && result.alignedBy !== 'audio') {
-    // Текст без таймингов (например, Genius): подгоняем его под звук, дальше караоке работает само.
-    urlInput.value = result.url;
-    forceScan = true;
-    setNote(t('karaokeSyncing'));
-    form.requestSubmit();
-    return;
-  }
   busy = true;
   render();
   const res = await chrome.runtime.sendMessage({ type: 'KARAOKE_OPEN', url: result.url, path }).catch((e) => ({ ok: false, error: String(e) }));

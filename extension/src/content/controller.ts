@@ -28,6 +28,7 @@ import { clickHeroPlay, clickPlayControl, readPlayer, seekViaUi } from './player
 import { t } from '../core/i18n.ts';
 import { extensionAlive } from './alive.ts';
 import { alignLyrics } from '../core/align.ts';
+import { estimateTimings } from '../core/lyrics.ts';
 
 export type CaptureMode = 'karaoke' | 'link';
 
@@ -504,11 +505,20 @@ export class Controller {
         }
       }
       this.updateClock(p, wall);
-      const hit = this.state.mode === 'karaoke' ? this.cache[trackKey(p.trackId)] : undefined;
+      const hit = this.state.mode === 'karaoke' ? this.cacheFor(p.trackId) : undefined;
       this.fromCache = !!hit;
+      // Текст без таймингов: строки раскладываются по длительности трека (без распознавания).
+      const approx = !!hit && hit.synced === false && !!p.duration;
+      const hitLines = hit
+        ? approx
+          ? estimateTimings(hit.lines.map((l) => l.text), p.duration!)
+          : hit.source === 'lrclib'
+            ? hit.lines
+            : dropTitleEcho(hit.lines, { title: hit.title, artist: hit.artist })
+        : [];
       this.saved = false;
       this.set({
-        lines: hit ? (hit.source === 'lrclib' ? hit.lines : dropTitleEcho(hit.lines, { title: hit.title, artist: hit.artist })).map((l) => ({ start: l.start, end: l.end, text: l.text, words: l.words ?? [] })) : [],
+        lines: hitLines.map((l) => ({ start: l.start, end: l.end, text: l.text, words: l.words ?? [] })),
         coverage: hit ? [{ start: 0, end: hit.duration ?? 1e9 }] : [],
         title: p.title,
         artist: p.artist,
@@ -516,14 +526,16 @@ export class Controller {
         duration: p.duration,
         playing: p.playing,
         fromCache: !!hit,
-        synced: hit ? hit.synced !== false : true,
+        synced: hit ? hit.synced !== false || approx : true,
         source: hit ? (hit.source ?? 'scan') : null,
         message:
           this.state.mode === 'karaoke'
             ? hit
-              ? hit.synced === false
-                ? t('unsynced')
-                : t('karaoke')
+              ? approx
+                ? t('karaokeApprox')
+                : hit.synced === false
+                  ? t('unsynced')
+                  : t('karaoke')
               : t('searching')
             : this.state.message,
         pos: this.clock.now(wall),
@@ -756,6 +768,14 @@ export class Controller {
         }
       })
       .catch(() => {});
+  }
+
+  /** Сохранённый текст трека; в плеере SoundCloud путь бывает «/undefined/название» — тогда ищем по названию. */
+  private cacheFor(trackId: string): SavedResult | undefined {
+    const direct = this.cache[trackKey(trackId)];
+    if (direct) return direct;
+    const k = Object.keys(this.cache).find((key) => isSameTrack(trackId, key));
+    return k ? this.cache[k] : undefined;
   }
 
   /** Готовый текст без таймингов для этого трека (Genius и т.п.) — его подгоним под звук. */

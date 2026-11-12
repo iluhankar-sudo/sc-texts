@@ -98,7 +98,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 /* Караоке: текущая строка яркая, остальные приглушены, слова загораются по мере пения */
 .lyrics.karaoke .line { color: rgba(255,255,255,.32); transition: color .35s, opacity .35s; }
 .lyrics.karaoke .line.past { color: rgba(255,255,255,.22); }
-.lyrics.karaoke .line.on { color: rgba(255,255,255,.42); }
+.lyrics.karaoke .line.on { color: #fff; text-shadow: 0 0 18px rgba(255,255,255,.25); } /* строка целиком */
 .lyrics.karaoke .line.on.plain { color: #fff; }
 .lyrics.karaoke .line .w { transition: color .18s ease-out, text-shadow .18s; }
 .lyrics.karaoke .line.on .w.sung { color: #fff; text-shadow: 0 0 18px rgba(255,255,255,.25); }

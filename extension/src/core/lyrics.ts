@@ -47,6 +47,29 @@ export function plainToLines(plain: string): CachedLine[] {
     .map((text, i) => ({ start: i, end: i + 1, text, words: [] }));
 }
 
+/**
+ * Примерные тайминги для текста без таймингов (караоке без распознавания):
+ * строки раскладываются по длительности трека пропорционально длине, с отступом на вступление
+ * и концовку. Пустые строки (границы куплетов) дают небольшую паузу.
+ */
+export function estimateTimings(texts: string[], duration: number): CachedLine[] {
+  const lines = texts.map((t) => t.trim()).filter(Boolean);
+  if (!lines.length || !(duration > 0)) return [];
+  const pad = Math.min(15, Math.max(3, duration * 0.07));
+  const from = pad;
+  const to = Math.max(from + lines.length, duration - pad);
+  const weight = (s: string) => 4 + s.length; // короткие строки тоже звучат заметное время
+  const total = lines.reduce((n, s) => n + weight(s), 0);
+  const out: CachedLine[] = [];
+  let cur = from;
+  for (const text of lines) {
+    const len = ((to - from) * weight(text)) / total;
+    out.push({ start: cur, end: cur + len * 0.92, text, words: [] });
+    cur += len;
+  }
+  return out;
+}
+
 export const norm = (s: string | null | undefined) =>
   (s ?? '')
     .toLowerCase()

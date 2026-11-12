@@ -558,3 +558,15 @@ test('pruneCache keeps pinned lyrics beyond the limit', () => {
   const out = pruneCache(map, 3);
   assert.deepEqual(Object.keys(out).sort(), ['t0', 't7', 't8', 't9']);
 });
+
+import { estimateTimings } from '../src/core/lyrics.ts';
+
+test('estimateTimings spreads lines over the track with intro/outro padding', () => {
+  const l = estimateTimings(['Короткая', 'Строка подлиннее, чем первая', '', 'Ещё одна строка'], 200);
+  assert.equal(l.length, 3);
+  assert.ok(l[0]!.start >= 3 && l[0]!.start <= 15);
+  assert.ok(l[2]!.end <= 200 - 3);
+  assert.ok(l[1]!.end - l[1]!.start > l[0]!.end - l[0]!.start); // длиннее строка — дольше
+  for (let i = 1; i < l.length; i++) assert.ok(l[i]!.start >= l[i - 1]!.end);
+  assert.deepEqual(estimateTimings(['a'], 0), []);
+});
