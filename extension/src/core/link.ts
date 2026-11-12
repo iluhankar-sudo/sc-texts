@@ -44,3 +44,17 @@ export function isSameTrack(trackId: string | null, path: string | null): boolea
   const [, wantArtist, wantTrack] = path.split('/');
   return (artist === 'undefined' || artist === '') && !!track && track === wantTrack && !!wantArtist;
 }
+
+/**
+ * Адрес трека со страницы, на которую ведёт короткая ссылка (если перенаправление не дало его сразу):
+ * <link rel="canonical"> или <meta property="og:url">.
+ */
+export function trackUrlFromHtml(html: string): TrackLink | null {
+  const m =
+    html.match(/<link[^>]+rel=["']canonical["'][^>]*href=["']([^"']+)["']/i) ??
+    html.match(/<link[^>]+href=["']([^"']+)["'][^>]*rel=["']canonical["']/i) ??
+    html.match(/<meta[^>]+property=["']og:url["'][^>]*content=["']([^"']+)["']/i) ??
+    html.match(/<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:url["']/i);
+  const link = m ? parseTrackUrl(m[1]!) : null;
+  return link?.path ? link : null;
+}

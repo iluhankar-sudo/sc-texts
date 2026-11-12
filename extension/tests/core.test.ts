@@ -570,3 +570,13 @@ test('estimateTimings spreads lines over the track with intro/outro padding', ()
   for (let i = 1; i < l.length; i++) assert.ok(l[i]!.start >= l[i - 1]!.end);
   assert.deepEqual(estimateTimings(['a'], 0), []);
 });
+
+test('trackUrlFromHtml: адрес трека из страницы короткой ссылки', async () => {
+  const { trackUrlFromHtml } = await import('../src/core/link.ts');
+  assert.deepEqual(trackUrlFromHtml('<head><link rel="canonical" href="https://soundcloud.com/Artist/Song-Name"></head>'), {
+    url: 'https://soundcloud.com/Artist/Song-Name',
+    path: '/artist/song-name',
+  });
+  assert.deepEqual(trackUrlFromHtml('<meta property="og:url" content="https://soundcloud.com/a/b?si=1">')?.path, '/a/b');
+  assert.equal(trackUrlFromHtml('<html>no</html>'), null);
+});

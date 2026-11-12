@@ -20,6 +20,7 @@
     "https://api.elevenlabs.io/*",
     "https://lrclib.net/*",
     "https://soundcloud.com/*",
+    "https://on.soundcloud.com/*",
     "https://api.deepseek.com/*",
     "https://api.audioshake.ai/*",
     "https://genius.com/*",

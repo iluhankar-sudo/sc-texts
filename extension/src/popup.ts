@@ -364,10 +364,19 @@ async function startLink(e: Event) {
   if (busy) return;
   // Пустое поле, а на вкладке открыт трек SoundCloud → распознаём его.
   if (!urlInput.value.trim() && activeTab?.url && parseTrackUrl(activeTab.url)) urlInput.value = activeTab.url;
-  const link = parseTrackUrl(urlInput.value);
+  let link = parseTrackUrl(urlInput.value);
   if (!link) {
     setNote(t('notALink'), true);
     return render();
+  }
+  // Короткая ссылка (кнопка «Copy link» на SoundCloud) — сначала узнаём настоящий адрес трека,
+  // иначе не найти готовый текст и не отличить этот трек от другого, играющего в плеере.
+  if (!link.path) {
+    const full = (await chrome.runtime.sendMessage({ type: 'RESOLVE_LINK', url: link.url }).catch(() => null)) as {
+      url: string | null;
+      path: string | null;
+    } | null;
+    if (full?.url && full.path) link = { url: full.url, path: full.path };
   }
   if (!activeTab?.id) return;
   busy = true;

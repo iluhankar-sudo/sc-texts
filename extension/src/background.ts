@@ -14,7 +14,7 @@ import { glossaryFor } from './core/vocab.ts';
  * окошко, открытое в этой вкладке, само запускает START_LINK, после чего пользователя
  * возвращают в его вкладку. Когда трек дослушан, вкладка распознавания закрывается.
  */
-import { isSameTrack, parseTrackUrl } from './core/link.ts';
+import { isSameTrack, parseTrackUrl, trackUrlFromHtml, type TrackLink } from './core/link.ts';
 import { normalizeConfig } from './core/config.ts';
 import type { Config } from './core/types.ts';
 import { findLyrics, metaNote, providerLog, saveFound, trackMeta } from './lyrics.ts';
@@ -191,6 +191,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse,
     );
   }
+  // Короткая ссылка «Copy link» (on.soundcloud.com/…) → полный адрес трека /исполнитель/трек.
+  if (msg?.type === 'RESOLVE_LINK') {
+    resolveShortLink(msg.url)
+      .then((link) => sendResponse({ ok: !!link, url: link?.url ?? null, path: link?.path ?? null }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
   // Готовый текст по ссылке (из окошка): oEmbed → LRCLIB → сохранить как последний результат.
   if (msg?.type === 'LOOKUP_LINK') {
     void (async () => {
@@ -363,4 +370,22 @@ async function openKaraoke(url: string, path: string): Promise<{ tabId: number; 
   const tab = await chrome.tabs.create({ url, active: true });
   await chrome.storage.session.set({ karaoke: { tabId: tab.id!, path, pending: true } });
   return { tabId: tab.id!, created: true };
+}
+
+
+/** Раскрывает короткую ссылку SoundCloud: идём по перенаправлению, при неудаче читаем страницу. */
+async function resolveShortLink(url: string): Promise<TrackLink | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const r = await fetch(url, { redirect: 'follow', credentials: 'omit', signal: ctrl.signal });
+    const direct = parseTrackUrl(r.url);
+    if (direct?.path) return direct;
+    return trackUrlFromHtml(await r.text());
+  } catch (e) {
+    console.warn('[sc texts] short link:', e);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
