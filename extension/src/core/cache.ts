@@ -29,6 +29,8 @@ export interface CachedResult {
   engine?: 'whisper' | 'audioshake';
   /** 2 — тайминги распознавания с поправкой на задержку захвата звука (старые записаны чуть позже). */
   timing?: number;
+  /** Текст исправлен вручную. */
+  edited?: boolean;
 }
 
 export const CACHE_LIMIT = 30;

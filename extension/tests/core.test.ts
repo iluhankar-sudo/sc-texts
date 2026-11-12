@@ -593,3 +593,23 @@ test('tightenStart: строка начинается с голоса, а не �
   const ok = { start: 1, end: 3, text: 'ok go', words: [w('ok', 1, 1.3), w('go', 1.4, 1.8)] };
   assert.equal(tightenStart(ok), ok);
 });
+
+test('retimeEdited: правка текста сохраняет тайминги', async () => {
+  const { retimeEdited, editorLines } = await import('../src/core/edit.ts');
+  const w = (word: string, start: number, end: number) => ({ word, start, end, prob: 1 });
+  const old = [
+    { start: 1, end: 3, text: 'я иду до мой', words: [w('я', 1, 1.2), w('иду', 1.3, 1.8), w('до', 1.9, 2.2), w('мой', 2.2, 2.6)] },
+    { start: 4, end: 6, text: 'по ночной москве', words: [w('по', 4, 4.2), w('ночной', 4.3, 4.9), w('москве', 5, 5.6)] },
+    { start: 7, end: 9, text: 'и не смотрю назад', words: [w('и', 7, 7.1), w('не', 7.2, 7.4), w('смотрю', 7.5, 8), w('назад', 8.1, 8.6)] },
+  ];
+  assert.deepEqual(editorLines('  Я иду домой \n\n по ночной   Москве\n'), ['Я иду домой', 'по ночной Москве']);
+  // То же число строк — время строк не меняется, неизменённая строка — та же.
+  const same = retimeEdited(old, ['Я иду домой', 'по ночной Москве', 'и не смотрю назад']);
+  assert.deepEqual(same.map((l) => [l.start, l.end]), [[1, 3], [4, 6], [7, 9]]);
+  assert.equal(same[2], old[2]);
+  assert.equal(same[1]!.words![2]!.start, 5); // слово на месте — своё время
+  // Строки объединили — время по словам.
+  const merged = retimeEdited(old, ['я иду до мой по ночной москве', 'и не смотрю назад']);
+  assert.equal(merged.length, 2);
+  assert.ok(Math.abs(merged[0]!.start - 1) < 0.01 && Math.abs(merged[1]!.start - 7) < 0.01);
+});

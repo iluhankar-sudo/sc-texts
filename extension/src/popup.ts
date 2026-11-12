@@ -7,6 +7,7 @@
 import { normalizeConfig } from './core/config.ts';
 import { baseLang, detectScriptLang, langName } from './core/lang.ts';
 import { isSameTrack, parseTrackUrl } from './core/link.ts';
+import { editorLines, retimeEdited } from './core/edit.ts';
 import { translateLines } from './translate.ts';
 import { classifyCaptureError } from './core/errors.ts';
 import { applyCorrection } from './core/correct.ts';
@@ -43,6 +44,10 @@ const karaokeTip = $('karaokeTip');
 /** Вкладка, где идёт караоке, запущенное кнопкой 🎤. */
 let karaokeTabId: number | null = null;
 const pinTip = $('pinTip');
+const editBtn = $<HTMLButtonElement>('edit');
+const editorEl = $<HTMLTextAreaElement>('editor');
+const editActions = $('editActions');
+let editing = false;
 const correctBtn = $<HTMLButtonElement>('correct');
 let hasDeepseek = false;
 let forceScan = false; // «Распознать по звуку»: не искать готовый текст
@@ -261,7 +266,9 @@ function render() {
           src: SOURCE_NAMES[result.source!] ?? result.source!,
           timing: result.alignedBy === 'audio' ? t('alignedByAudio') : result.synced !== false ? t('synced') : t('notSynced'),
         })
-      : result.engine === 'audioshake'
+      : result.edited
+        ? t('srcEdited')
+        : result.engine === 'audioshake'
           ? t('srcAudioshake')
           : result.corrected
             ? t('srcCorrected')
@@ -279,6 +286,8 @@ function render() {
   copyBtn.hidden = active || !result || result.lines.length === 0;
   // Закреп: текст остаётся за треком, и по этой ссылке больше не нужно искать или распознавать.
   pinBtn.hidden = copyBtn.hidden || !result?.url || !parseTrackUrl(result.url)?.path;
+  // ✏️ Правка: только для текстов, распознанных расширением (свои ошибки распознавания).
+  editBtn.hidden = pinBtn.hidden || !(!result!.source || result!.source === 'scan' || result!.alignedBy === 'audio');
   const pinned = !!result?.pinned;
   pinBtn.classList.toggle('on', pinned);
   pinTip.textContent = pinned ? t('pinnedTip') : t('pinTip');
@@ -334,6 +343,7 @@ function render() {
 }
 
 async function refresh() {
+  if (editing) return; // не мешаем правке текста
   const s = await chrome.storage.session.get(['capture', 'karaoke']).catch(() => ({}) as Record<string, unknown>);
   const cap = s.capture as { tabId: number } | undefined;
   captureTabId = cap?.tabId ?? null;
@@ -771,3 +781,64 @@ translateBtn.addEventListener('click', () => {
 });
 
 void init();
+
+// ---------------- Правка текста вручную ----------------
+
+async function storedResult(): Promise<{ results: Record<string, SavedResult>; key: string; base: SavedResult } | null> {
+  const path = result?.url ? parseTrackUrl(result.url)?.path : null;
+  if (!path) return null;
+  const store = await chrome.storage.local.get(['results', 'lastResult']);
+  const results = (store.results as Record<string, SavedResult> | undefined) ?? {};
+  const key = trackKey(path);
+  const last = store.lastResult as SavedResult | undefined;
+  const base = last?.url === result!.url ? last : (results[key] ?? result!);
+  return { results, key, base };
+}
+
+function setEditing(on: boolean) {
+  editing = on;
+  document.body.classList.toggle('editing', on);
+  editorEl.hidden = !on;
+  editActions.hidden = !on;
+}
+
+editBtn.addEventListener('click', async () => {
+  const s = await storedResult();
+  if (!s) return;
+  // Строки с названием песни (в окошке скрыты) в редактор тоже не попадают.
+  const lines = s.base.source === 'lrclib' ? s.base.lines : dropTitleEcho(s.base.lines, { title: s.base.title, artist: s.base.artist });
+  editorEl.value = lines.map((l) => dashes(l.text)).join('\n');
+  setEditing(true);
+  setNote('');
+  editorEl.focus();
+  editorEl.setSelectionRange(0, 0);
+  editorEl.scrollTop = 0;
+});
+$('editCancel').addEventListener('click', () => {
+  setEditing(false);
+  lastKey = '';
+  void refresh();
+});
+$('editSave').addEventListener('click', async () => {
+  const texts = editorLines(editorEl.value);
+  if (!texts.length) {
+    statusEl.textContent = t('editEmpty');
+    statusEl.classList.add('err');
+    return;
+  }
+  const s = await storedResult();
+  if (!s) return setEditing(false);
+  const old = s.base.source === 'lrclib' ? s.base.lines : dropTitleEcho(s.base.lines, { title: s.base.title, artist: s.base.artist });
+  // Закрепляем, чтобы исправленный текст не перезаписало новое распознавание.
+  const saved: SavedResult = { ...s.base, lines: retimeEdited(old, texts), edited: true, pinned: true };
+  s.results[s.key] = saved;
+  await chrome.storage.local.set({ results: pruneCache(s.results), lastResult: saved });
+  setEditing(false);
+  setNote(t('editedDone'));
+  lastKey = '';
+  await refresh();
+});
+editorEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') (document.getElementById('editCancel') as HTMLButtonElement).click();
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) (document.getElementById('editSave') as HTMLButtonElement).click();
+});
