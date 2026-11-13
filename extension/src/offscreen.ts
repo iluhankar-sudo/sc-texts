@@ -36,7 +36,7 @@ interface Take {
 /** No final pass for very long recordings (the API's file size limit). */
 const MAX_FINAL_SEC = 600;
 
-/** Chunks are never dropped: the track is finite, and a lost chunk is a missing piece of lyrics. The limit only guards against hangs.
+/** Chunks are never dropped: the track is finite, and a lost chunk is a missing piece of lyrics. The limit only guards against hangs. */
 const MAX_QUEUE = 60;
 
 let audioCtx: AudioContext | null = null;
@@ -567,7 +567,7 @@ async function geminiPass(list: Take[], meta: GeminiMeta | null) {
     const body = JSON.stringify(buildGeminiRequest(toBase64(new Uint8Array(wav)), meta));
     const json = await withRetry(async () => {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 150000);
+      const timer = setTimeout(() => ctrl.abort(), 80000);
       try {
         const r = await fetch(ep.url, { method: 'POST', signal: ctrl.signal, headers: { ...ep.headers, 'Content-Type': 'application/json' }, body });
         const j = await r.json().catch(() => null);

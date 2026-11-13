@@ -655,7 +655,7 @@ export class Controller {
     });
     const geminiDone = new Promise<GeminiReply>((res) => {
       this.geminiWaiter = res;
-      setTimeout(() => res({ ok: false, error: 'timeout' }), 160000);
+      setTimeout(() => res({ ok: false, error: 'timeout' }), 90000);
     });
     const draft = this.state.lines.map((l) => l.text).join('\n');
     const gemini: GeminiMeta = {
