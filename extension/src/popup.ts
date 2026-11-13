@@ -305,6 +305,16 @@ function render() {
   karaokeBtn.setAttribute('aria-label', karaokeTip.textContent);
   if (!(active && state!.lines.length) && !(!active && result?.lines.length)) viewTexts = [];
   renderTranslateButton();
+  // Ready lyrics without timings (Genius etc.) for the track being synced: show them right away,
+  // recognition only fits their line timings in the background.
+  const refPath = linkJob && result?.url && result.source && result.source !== 'scan' && result.synced === false && result.lines.length
+    ? parseTrackUrl(result.url)?.path ?? null
+    : null;
+  if (active && refPath && state!.linkPath && isSameTrack(state!.linkPath, refPath)) {
+    seekable = false;
+    renderLines(`ref:${result!.createdAt}`, result!.lines, false, false);
+    return;
+  }
   if (active) {
     const lines = state!.lines;
     if (lines.length === 0) {

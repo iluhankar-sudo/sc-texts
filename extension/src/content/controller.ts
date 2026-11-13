@@ -65,6 +65,8 @@ export interface PanelState {
   synced: boolean;
   /** Where the lyrics come from. */
   source: 'scan' | 'lrclib' | null;
+  /** Link mode: the linked track's path (/artist/track). */
+  linkPath?: string | null;
 }
 
 const POLL_MS = 100;
@@ -208,7 +210,7 @@ export class Controller {
         this.cacheReady = true;
       });
     const message = opts.mode === 'link' ? t('startingTrack') : t('karaoke');
-    this.set({ ...initial(), active: true, mode: opts.mode, status: 'listening', message });
+    this.set({ ...initial(), active: true, mode: opts.mode, status: 'listening', message, linkPath: this.linkPath });
     if (this.timer === null) this.timer = window.setInterval(() => this.tick(), POLL_MS);
     this.tick();
   }
@@ -880,6 +882,7 @@ export class Controller {
     this.set({ lines: ch ? ch.lines : lines, coverage: addRange(this.state.coverage, trusted) });
     if (msg.final && msg.engine) this.engine = msg.engine;
     if (msg.gemini) this.geminiChunks++;
+    this.log(`window ${win.start.toFixed(0)}-${win.end.toFixed(0)} s: ${incoming.length} lines${msg.gemini ? ' (gemini)' : msg.final ? ' (final)' : ''}`);
   }
 }
 
