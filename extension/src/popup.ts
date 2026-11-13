@@ -144,18 +144,10 @@ function renderLines(baseKey: string, lines: ViewLine[], intro: boolean, karaoke
     n.textContent = '♪';
     nodes.push(n);
   }
-  lines.forEach((l, idx) => {
+  lines.forEach((l) => {
     const d = document.createElement('div');
     d.className = 'line';
     d.dataset.t = String(l.start);
-    // Припев: найденные повторы помечаются, у первой строки каждого припева — подпись.
-    if (l.chorus) {
-      d.classList.add('chorus');
-      if (!lines[idx - 1]?.chorus) {
-        d.classList.add('chorusStart');
-        d.dataset.label = t('chorusLabel');
-      }
-    }
     const words = karaoke ? (l.words ?? []).filter((w) => w.word) : [];
     if (words.length) {
       words.forEach((w, i) => {
