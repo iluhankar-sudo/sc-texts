@@ -240,6 +240,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch((e) => sendResponse({ ok: false, error: String(e).slice(0, 160) }));
     return true;
   }
+  // Клик по строке текста: перемотать трек на начало строки.
+  if (msg?.type === 'SEEK_LINE') {
+    void (async () => {
+      let tabId: number | null = msg.tabId ?? null;
+      if (tabId === null && msg.path) tabId = (await findTrackTab(msg.path))?.id ?? null;
+      if (tabId === null) return sendResponse({ ok: false, reason: 'notOpen' });
+      const res = await chrome.tabs.sendMessage(tabId, { type: 'SEEK_TO', path: msg.path ?? null, time: msg.time }).catch(() => null);
+      sendResponse(res ?? { ok: false, reason: 'notOpen' });
+    })();
+    return true;
+  }
   if (msg?.type === 'QUEUE_LINK') {
     queueLink(msg.url, msg.path ?? null, msg.returnTabId ?? null)
       .then(() => sendResponse({ ok: true }))
@@ -350,7 +361,8 @@ chrome.runtime.onInstalled.addListener(async () => {
 void installHeaderRules();
 
 /** Караоке по кнопке 🎤: ищем вкладку SoundCloud с этим треком (лучше — где он уже играет), иначе открываем его. */
-async function openKaraoke(url: string, path: string): Promise<{ tabId: number; created: boolean }> {
+/** Вкладка SoundCloud с этим треком: играющий в плеере (3) > в плеере на паузе (2) > открыта его страница (1). */
+async function findTrackTab(path: string): Promise<{ id: number; windowId: number; score: number } | null> {
   const tabs = await chrome.tabs.query({ url: ['https://soundcloud.com/*'] }).catch(() => [] as chrome.tabs.Tab[]);
   let best: { id: number; windowId: number; score: number } | null = null;
   for (const tab of tabs) {
@@ -362,6 +374,11 @@ async function openKaraoke(url: string, path: string): Promise<{ tabId: number; 
     const score = inPlayer && info!.playing ? 3 : inPlayer ? 2 : 1;
     if (!best || score > best.score) best = { id: tab.id, windowId: tab.windowId, score };
   }
+  return best;
+}
+
+async function openKaraoke(url: string, path: string): Promise<{ tabId: number; created: boolean }> {
+  const best = await findTrackTab(path);
   if (best) {
     await chrome.tabs.sendMessage(best.id, { type: 'KARAOKE_START', path, autoplay: true });
     await chrome.storage.session.set({ karaoke: { tabId: best.id, path } });

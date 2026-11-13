@@ -1,7 +1,8 @@
 import { normalizeConfig } from '../core/config.ts';
 import type { ChunkResultMessage } from '../core/types.ts';
 import { Controller } from './controller.ts';
-import { clickHeroPlay, clickPlayControl, readPlayer } from './player.ts';
+import { clickHeroPlay, clickPlayControl, readPlayer, seekViaUi } from './player.ts';
+import { controlMedia, readMedia } from './media.ts';
 import { isSameTrack } from '../core/link.ts';
 import { requestTabAudio, startStreaming, stopPageCapture } from './page-capture.ts';
 import { t } from '../core/i18n.ts';
@@ -29,6 +30,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     case 'PLAYER_INFO':
       sendResponse(readPlayer());
       return false;
+    case 'SEEK_TO':
+      // Клик по строке в окошке: перемотка на её начало (как на YouTube и в Spotify).
+      void seekTo(msg.path ?? null, Math.max(0, Number(msg.time) || 0)).then(sendResponse);
+      return true;
     case 'LINK_START':
       hideHint();
       // Трек по ссылке на уже открытом SoundCloud: без перехода на его страницу.
@@ -210,3 +215,23 @@ function hideHint() {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.results) controller.reloadCache(changes.results.newValue as never);
 });
+
+/** Перемотка трека на время строки; трек не в плеере, но открыта его страница — сначала включаем. */
+async function seekTo(path: string | null, time: number): Promise<{ ok: boolean; reason?: string }> {
+  let p = readPlayer();
+  const onPage = !!path && location.pathname.toLowerCase().replace(/\/+$/, '') === path;
+  if (!p.trackId || (path && !isSameTrack(p.trackId, path))) {
+    if (!onPage || !clickHeroPlay()) return { ok: false, reason: 'otherTrack' };
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 200));
+      p = readPlayer();
+      if (p.trackId && isSameTrack(p.trackId, path!) && (readMedia()?.duration || p.duration)) break;
+    }
+    if (!p.trackId || !isSameTrack(p.trackId, path!)) return { ok: false, reason: 'notStarted' };
+  }
+  const dur = readMedia()?.duration || p.duration || 0;
+  // Через полосу прогресса SoundCloud сам подгружает нужный кусок; иначе — напрямую в медиа.
+  if (!(dur > 0 && seekViaUi(time / dur))) controlMedia('seek', undefined, time);
+  if (!readPlayer().playing) clickPlayControl();
+  return { ok: true };
+}

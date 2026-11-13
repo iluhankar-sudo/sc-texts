@@ -171,3 +171,8 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; width: 0; heig
 .editor:focus { border-color: rgba(255,255,255,.4); }
 body.editing #list, body.editing .actions:not(.editActions) { display: none !important; }
 .editActions[hidden] { display: none !important; }
+
+/* Перемотка кликом по строке */
+.lyrics.seekable .line:not(.note) { cursor: pointer; border-radius: 10px; padding: 2px 8px; margin-left: -8px; margin-right: -8px; transition: background-color .12s, color .35s, opacity .35s; }
+.lyrics.seekable .line:not(.note):hover { background: rgba(255,255,255,.06); }
+.lyrics.seekable .line.tap { background: rgba(255,255,255,.12); }

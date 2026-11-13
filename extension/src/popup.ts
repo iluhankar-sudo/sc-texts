@@ -124,8 +124,12 @@ function dashes(s: string): string {
   return s.replace(/[\u2014\u2013\u2012\u2015]/g, '-');
 }
 
+/** Можно ли перематывать трек кликом по строке (есть время строк и сейчас не идёт распознавание). */
+let seekable = false;
+
 function renderLines(baseKey: string, lines: ViewLine[], intro: boolean, karaoke: boolean) {
   listEl.classList.toggle('karaoke', karaoke);
+  listEl.classList.toggle('seekable', seekable);
   viewTexts = lines.map((l) => l.text);
   const key = `${baseKey}|tr:${translateOn ? trVersion : 'off'}`;
   if (key === lastKey) return;
@@ -142,6 +146,7 @@ function renderLines(baseKey: string, lines: ViewLine[], intro: boolean, karaoke
   for (const l of lines) {
     const d = document.createElement('div');
     d.className = 'line';
+    d.dataset.t = String(l.start);
     const words = karaoke ? (l.words ?? []).filter((w) => w.word) : [];
     if (words.length) {
       words.forEach((w, i) => {
@@ -318,9 +323,11 @@ function render() {
       // Караоке: синхронная подсветка, позиция интерполируется в karaokeFrame().
       // Текст без таймингов (из LRCLIB) показываем целиком, без подсветки.
       const synced = state!.synced !== false;
+      seekable = synced;
       renderLines(`k:${synced}:${lines.map((l) => `${l.start}|${l.text}`).join('\n')}`, lines, synced, synced);
       return;
     }
+    seekable = false;
     renderLines(`a:${lines.map((l) => `${l.start}|${l.text}`).join('\n')}`, lines, true, false);
     // Прокрутка к последней распознанной строке
     const target = lines.length;
@@ -333,6 +340,7 @@ function render() {
   }
   if (result) {
     if (result.lines.length === 0) return emptyView(`r0:${result.createdAt}`, t('noLyricsTitle'), t('noLyricsText'));
+    seekable = !!result.url && (result.synced !== false || result.alignedBy === 'audio');
     return renderLines(`r:${result.createdAt}`, result.lines, false, false);
   }
   emptyView(
@@ -849,4 +857,23 @@ $('editSave').addEventListener('click', async () => {
 editorEl.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') (document.getElementById('editCancel') as HTMLButtonElement).click();
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) (document.getElementById('editSave') as HTMLButtonElement).click();
+});
+
+// ---------------- Перемотка кликом по строке ----------------
+listEl.addEventListener('click', async (e) => {
+  if (!seekable || editing) return;
+  const el = (e.target as HTMLElement).closest<HTMLElement>('.line[data-t]');
+  if (!el || window.getSelection()?.toString()) return; // выделяли текст — не перематываем
+  const time = Number(el.dataset.t);
+  if (!Number.isFinite(time)) return;
+  const karaokeOn = !!state?.active && state.mode === 'karaoke';
+  const path = result?.url ? parseTrackUrl(result.url)?.path ?? null : null;
+  el.classList.add('tap');
+  setTimeout(() => el.classList.remove('tap'), 250);
+  const res = (await chrome.runtime
+    .sendMessage({ type: 'SEEK_LINE', tabId: karaokeOn ? (karaokeTabId ?? activeTab?.id ?? null) : null, path: karaokeOn ? null : path, time: Math.max(0, time - 0.15) })
+    .catch(() => null)) as { ok?: boolean; reason?: string } | null;
+  if (!res?.ok) setNote(t('seekNeedsTrack'));
+  else if (note === t('seekNeedsTrack')) setNote('');
+  render();
 });
