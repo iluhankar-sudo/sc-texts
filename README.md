@@ -22,7 +22,8 @@ No key is needed: recognition goes through the owner's proxy (see below). If you
 - **Recognition from audio.** The track plays muted and sped up (Auto: up to ×3, ×2.5 with AudioShake) while short chunks are transcribed for a live preview. At the end the whole recording is transcribed in one request for full song context.
 - **Accuracy helpers.** Vocabulary prompt (artist, title, custom words, profanity and slang), high-pass filter and normalization, language lock per track, hallucination filters, line starts tightened to the first sung word, capture-latency compensation.
 - **Chorus cross-check.** Repeated multi-line sections are detected during recognition; each word of a repeat is replaced by the variant heard most often across repeats (ties are broken by model confidence).
-- **AI correction.** Misheard words are fixed by an LLM that sees both transcriptions, the title and the artist: free via Groq (`llama-3.3-70b-versatile`), or DeepSeek with your own key. Lines the model rewrote almost entirely are kept as recognized.
+- **Gemini listens to the whole track.** After recognition, the full recording is sent (through the proxy) to Gemini, which writes down the sung lyrics. Its text is aligned onto Whisper's word timings, so karaoke and seeking keep working. Everything is automatic.
+- **AI correction as a fallback.** If Gemini is unavailable (no key, quota, blocked reply), misheard words are fixed by an LLM that sees both transcriptions, the title and the artist: free via Groq (`llama-3.3-70b-versatile`), or DeepSeek with your own key. Lines the model rewrote almost entirely are kept as recognized.
 - **Karaoke.** Appears once lyrics are ready; whole lines light up in time with the track. Lyrics without timings get approximate timings.
 - **Click a line to seek.** Jumps the SoundCloud player to that line (pointer cursor on hover).
 - **Pin and edit.** Pinned or hand-edited lyrics are kept for the track and never re-recognized.
@@ -36,7 +37,7 @@ On every push to `master`, GitHub Actions ([`.github/workflows/release.yml`](.gi
 1. runs the proxy tests and, if the secrets are set, deploys the proxy to Cloudflare Workers (it keeps the Groq key server-side);
 2. runs the extension tests, builds it **without a key** but with the proxy address, and publishes `sc-texts.zip` to Releases.
 
-One-time setup, in Settings → Secrets and variables → Actions: `GROQ_KEY`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (and optionally `APP_TOKEN`). Details: [proxy/README.md](proxy/README.md).
+One-time setup, in Settings → Secrets and variables → Actions: `GROQ_KEY`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (optionally `GEMINI_KEY` and `APP_TOKEN`). Details: [proxy/README.md](proxy/README.md).
 
 To build a personal copy with an embedded key: `cd extension && npm install && DEFAULT_API_KEY=gsk_... node build.mjs` (do not publish such a build).
 

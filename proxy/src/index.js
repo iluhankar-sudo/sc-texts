@@ -13,6 +13,7 @@
  */
 
 const GROQ = 'https://api.groq.com/openai/v1';
+const GEMINI = 'https://generativelanguage.googleapis.com/v1beta/models';
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 
 const cors = {
@@ -32,7 +33,7 @@ export default {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
     if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/health')) {
-      return json({ ok: true, service: 'sc-texts-proxy', key: !!env.GROQ_KEY });
+      return json({ ok: true, service: 'sc-texts-proxy', key: !!env.GROQ_KEY, gemini: !!env.GEMINI_KEY });
     }
     if (request.method !== 'POST') return fail(405, 'method not allowed');
     if (!env.GROQ_KEY) return fail(500, 'proxy is not configured (GROQ_KEY)');
@@ -46,6 +47,7 @@ export default {
 
     if (url.pathname === '/v1/audio/transcriptions') return transcribe(request, env);
     if (url.pathname === '/v1/chat/completions') return chat(request, env);
+    if (url.pathname === '/v1/gemini') return gemini(request, env);
     return fail(404, 'not found');
   },
 };
@@ -102,12 +104,36 @@ async function chat(request, env) {
   });
 }
 
+/**
+ * Gemini lyrics transcription: the extension sends a ready generateContent body (audio + instructions),
+ * the proxy adds the key and picks the model. The body is forwarded as is, without parsing (it is several MB
+ * and parsing it would cost Worker CPU time). If a model is unavailable (404), the next one in GEMINI_MODELS is tried.
+ */
+async function gemini(request, env) {
+  if (!env.GEMINI_KEY) return fail(503, 'gemini is not configured (GEMINI_KEY)');
+  const len = Number(request.headers.get('Content-Length') || 0);
+  if (len > MAX_AUDIO_BYTES) return fail(413, 'request is too large (max 25 MB)');
+  const body = await request.arrayBuffer();
+  if (body.byteLength > MAX_AUDIO_BYTES) return fail(413, 'request is too large (max 25 MB)');
+  const models = list(env.GEMINI_MODELS, 'gemini-flash-latest,gemini-2.5-flash');
+  let last = null;
+  for (const model of models) {
+    last = await forward(`${GEMINI}/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST',
+      headers: { 'x-goog-api-key': env.GEMINI_KEY, 'Content-Type': 'application/json' },
+      body,
+    });
+    if (last.status !== 404) return last;
+  }
+  return last ?? fail(502, 'no gemini model available');
+}
+
 async function forward(url, init) {
   let r;
   try {
     r = await fetch(url, init);
   } catch (e) {
-    return fail(502, `groq is unreachable: ${String(e).slice(0, 100)}`);
+    return fail(502, `upstream is unreachable: ${String(e).slice(0, 100)}`);
   }
   const headers = { 'Content-Type': r.headers.get('Content-Type') || 'application/json', ...cors };
   const ra = r.headers.get('Retry-After');

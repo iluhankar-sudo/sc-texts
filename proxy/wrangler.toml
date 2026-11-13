@@ -8,6 +8,8 @@ compatibility_date = "2025-09-01"
 # Models allowed through the proxy.
 ALLOWED_TRANSCRIBE_MODELS = "whisper-large-v3,whisper-large-v3-turbo"
 ALLOWED_CHAT_MODELS = "llama-3.3-70b-versatile,llama-3.1-8b-instant"
+# Gemini models for lyrics transcription, tried in order (the next one if a model is not found).
+GEMINI_MODELS = "gemini-flash-latest,gemini-2.5-flash"
 
 # Rate limit per client address: 40 per minute (a track at x3 is ~10-15 requests).
 [[ratelimits]]

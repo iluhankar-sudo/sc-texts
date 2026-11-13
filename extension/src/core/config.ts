@@ -38,6 +38,12 @@ const APP_TOKEN = typeof __APP_TOKEN__ !== 'undefined' ? __APP_TOKEN__ : '';
  * Where to send Groq requests (recognition, translation, correction):
  * own key (in settings or embedded) - directly; otherwise via the proxy; otherwise nowhere (null).
  */
+/** Where to send the Gemini request (the extension's proxy keeps the Gemini key); null if there is no proxy. */
+export function geminiEndpoint(): { url: string; headers: Record<string, string> } | null {
+  if (!PROXY_URL) return null;
+  return { url: `${PROXY_URL}/v1/gemini`, headers: APP_TOKEN ? { 'X-SC-Texts': APP_TOKEN } : {} };
+}
+
 export function groqEndpoint(cfg: Pick<Config, 'apiUrl' | 'apiKey'>): { url: string; headers: Record<string, string>; viaProxy: boolean } | null {
   if (cfg.apiKey) return { url: cfg.apiUrl, headers: { Authorization: `Bearer ${cfg.apiKey}` }, viaProxy: false };
   if (PROXY_URL) return { url: `${PROXY_URL}/v1`, headers: APP_TOKEN ? { 'X-SC-Texts': APP_TOKEN } : {}, viaProxy: true };

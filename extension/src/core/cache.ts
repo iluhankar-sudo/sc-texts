@@ -28,7 +28,7 @@ export interface CachedResult {
   /** The lyrics were fixed by a language model. */
   corrected?: boolean;
   /** Which engine recognized the final lyrics. */
-  engine?: 'whisper' | 'audioshake';
+  engine?: 'whisper' | 'audioshake' | 'gemini';
   /** 2 - recognition timings corrected for capture latency (older ones were recorded slightly late). */
   timing?: number;
   /** The lyrics were edited by hand. */

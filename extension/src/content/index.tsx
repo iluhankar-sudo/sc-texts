@@ -60,6 +60,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     case 'FINAL_DONE':
       controller.onFinalDone();
       return false;
+    case 'GEMINI_RESULT':
+      controller.onGemini({ ok: !!msg.ok, lines: msg.lines, error: msg.error });
+      return false;
   }
   return false;
 });

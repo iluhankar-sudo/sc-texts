@@ -1,10 +1,10 @@
 # sc texts proxy
 
-A small Cloudflare Worker that keeps the Groq key server-side and forwards the extension's requests to Groq (speech recognition, translation and lyrics correction). Thanks to it the extension works for other people without their own key, and nobody sees your key.
+A small Cloudflare Worker that keeps the Groq and Gemini keys server-side and forwards the extension's requests to Groq (speech recognition, translation, lyrics correction) and Gemini (listening to the whole track). Thanks to it the extension works for other people without their own key, and nobody sees your key.
 
 ## How it protects your limits
 
-- forwards only recognition (`/v1/audio/transcriptions`) and chat (`/v1/chat/completions`);
+- forwards only recognition (`/v1/audio/transcriptions`), chat (`/v1/chat/completions`) and Gemini lyrics (`/v1/gemini`, models from `GEMINI_MODELS`);
 - only allowed models (`ALLOWED_TRANSCRIBE_MODELS`, `ALLOWED_CHAT_MODELS` in `wrangler.toml`);
 - audio up to 25 MB, chat replies up to 4000 tokens;
 - at most 40 requests per minute from one address (`[[ratelimits]]` in `wrangler.toml`);
@@ -19,6 +19,7 @@ In the repository: Settings → Secrets and variables → Actions → New reposi
 | Secret | What it is |
 |---|---|
 | `GROQ_KEY` | Groq API key (console.groq.com → API Keys) |
+| `GEMINI_KEY` | optional: Gemini API key (aistudio.google.com → Get API key) |
 | `CLOUDFLARE_API_TOKEN` | dash.cloudflare.com → My Profile → API Tokens → Create Token → "Edit Cloudflare Workers" template |
 | `CLOUDFLARE_ACCOUNT_ID` | dash.cloudflare.com → Workers & Pages → "Account ID" on the right |
 | `APP_TOKEN` | optional: any long string |

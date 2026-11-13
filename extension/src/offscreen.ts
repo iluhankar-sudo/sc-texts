@@ -10,7 +10,8 @@ import { buildPrompt, fromCloud, fromElevenLabs, normLang, pickByConfidence } fr
 import { fromAudioShakeJson, fromSrt } from './core/audioshake.ts';
 import type { Config, TranscribeResponse } from './core/types.ts';
 import { t } from './core/i18n.ts';
-import { groqEndpoint } from './core/config.ts';
+import { geminiEndpoint, groqEndpoint } from './core/config.ts';
+import { buildGeminiRequest, parseGeminiLyrics, toBase64, type GeminiMeta } from './core/gemini.ts';
 
 interface PendingChunk {
   epoch: number;
@@ -230,10 +231,12 @@ function closeTake() {
  * Final pass: each continuous take (usually the whole track) is recognized in one request -
  * with the full song context this is noticeably more accurate than 40-second chunks.
  */
-function finalPass() {
+function finalPass(meta: GeminiMeta | null) {
   closeTake();
   const list = takes;
   takes = [];
+  // Gemini listens to the same recording in parallel; its text is aligned onto Whisper's timings later.
+  void geminiPass(list, meta);
   if (cfg?.audioshakeKey) {
     void audioshakePass(list);
     return;
@@ -518,7 +521,7 @@ chrome.runtime.onMessage.addListener((m) => {
       handleReset(m);
       break;
     case 'FINAL_PASS':
-      finalPass();
+      finalPass(m.gemini ?? null);
       break;
   }
 });
@@ -542,3 +545,44 @@ chrome.runtime.onConnect.addListener((p) => {
     onBlock(f, m.w);
   });
 });
+
+/** Gemini takes at most this much audio (the request limit is 20 MB; 16 kHz WAV in base64 is ~43 KB per second). */
+const GEMINI_MAX_SEC = 7 * 60;
+
+/** Gemini listens to the whole recording and writes the lyrics down; the result goes to the page as GEMINI_RESULT. */
+async function geminiPass(list: Take[], meta: GeminiMeta | null) {
+  const ep = geminiEndpoint();
+  if (!ep || !meta || !list.length) return send({ type: 'GEMINI_RESULT', ok: false, error: ep ? 'no audio' : 'no proxy' });
+  try {
+    const pcm = list.map((tk) => toAsrPcm(tk.samples, tk.eff));
+    const total = pcm.reduce((n, p) => n + p.length, 0);
+    if (total / 16000 > GEMINI_MAX_SEC) return send({ type: 'GEMINI_RESULT', ok: false, error: 'track too long' });
+    const all = new Int16Array(total);
+    let at = 0;
+    for (const p of pcm) {
+      all.set(p, at);
+      at += p.length;
+    }
+    const wav = encodeWav(all, 16000);
+    const body = JSON.stringify(buildGeminiRequest(toBase64(new Uint8Array(wav)), meta));
+    const json = await withRetry(async () => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 150000);
+      try {
+        const r = await fetch(ep.url, { method: 'POST', signal: ctrl.signal, headers: { ...ep.headers, 'Content-Type': 'application/json' }, body });
+        const j = await r.json().catch(() => null);
+        if (!r.ok) {
+          const msg = (j as { error?: { message?: string } } | null)?.error?.message ?? '';
+          throw Object.assign(new Error(`HTTP ${r.status}: ${msg.slice(0, 120)}`), { status: r.status });
+        }
+        return j;
+      } finally {
+        clearTimeout(timer);
+      }
+    });
+    const res = parseGeminiLyrics(json);
+    send(res.ok ? { type: 'GEMINI_RESULT', ok: true, lines: res.lines } : { type: 'GEMINI_RESULT', ok: false, error: res.error });
+  } catch (e) {
+    send({ type: 'GEMINI_RESULT', ok: false, error: String(e).slice(0, 160) });
+  }
+}

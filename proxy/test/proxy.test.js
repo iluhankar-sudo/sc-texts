@@ -54,6 +54,28 @@ test('rate limit and chat caps', async () => {
 
 test('health and CORS preflight', async () => {
   const h = await worker.fetch(new Request('https://p.example/health'), env());
-  assert.deepEqual(await h.json(), { ok: true, service: 'sc-texts-proxy', key: true });
+  assert.deepEqual(await h.json(), { ok: true, service: 'sc-texts-proxy', key: true, gemini: false });
   assert.equal((await worker.fetch(new Request('https://p.example/v1/audio/transcriptions', { method: 'OPTIONS' }), env())).status, 204);
+});
+
+test('gemini: key added, body forwarded as is, falls back to the next model on 404', async () => {
+  calls.length = 0;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init });
+    if (String(url).includes('/gemini-flash-latest:')) return new Response('{"error":{"message":"not found"}}', { status: 404 });
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"lines":["a"]}' }] } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    const body = JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] });
+    assert.equal((await worker.fetch(post('/v1/gemini', body), env())).status, 503); // no GEMINI_KEY
+    const r = await worker.fetch(post('/v1/gemini', body), env({ GEMINI_KEY: 'g_test' }));
+    assert.equal(r.status, 200);
+    assert.equal(calls.length, 2);
+    assert.match(String(calls[1].url), /gemini-2\.5-flash:generateContent$/);
+    assert.equal(calls[1].init.headers['x-goog-api-key'], 'g_test');
+    assert.equal(new TextDecoder().decode(calls[1].init.body), body);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

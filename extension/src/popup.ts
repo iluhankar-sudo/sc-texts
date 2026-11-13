@@ -10,7 +10,6 @@ import { isSameTrack, parseTrackUrl } from './core/link.ts';
 import { editorLines, retimeEdited } from './core/edit.ts';
 import { translateLines } from './translate.ts';
 import { classifyCaptureError } from './core/errors.ts';
-import { applyCorrection } from './core/correct.ts';
 import { pruneCache, trackKey } from './core/cache.ts';
 import { activeIndex } from './core/sync.ts';
 import { dropTitleEcho } from './core/filter.ts';
@@ -48,8 +47,6 @@ const editBtn = $<HTMLButtonElement>('edit');
 const editorEl = $<HTMLTextAreaElement>('editor');
 const editActions = $('editActions');
 let editing = false;
-const correctBtn = $<HTMLButtonElement>('correct');
-let hasDeepseek = false;
 let forceScan = false; // "Recognize from audio": don't look up ready lyrics
 const translateBtn = $<HTMLButtonElement>('translate');
 const translateLabel = $('translateLabel');
@@ -274,16 +271,15 @@ function render() {
         })
       : result.edited
         ? t('srcEdited')
-        : result.engine === 'audioshake'
+        : result.engine === 'gemini'
+          ? t('srcGemini')
+          : result.engine === 'audioshake'
           ? t('srcAudioshake')
           : result.corrected
             ? t('srcCorrected')
             : t('srcScan');
     status = t('lineCount', { src, n: result.lines.length });
   }
-  correctBtn.hidden =
-    active || !hasDeepseek || !result || (!!result.source && result.source !== 'scan') || !!result.corrected || result.lines.length === 0;
-  correctBtn.disabled = busy;
   if (!status && translateOn) status = trStatus;
   statusEl.textContent = status;
   statusEl.classList.toggle('err', noteIsError || state?.status === 'error');
@@ -601,32 +597,6 @@ async function toggleCapture() {
 }
 
 form.addEventListener('submit', (e) => void startLink(e));
-// Fix already recognized lyrics with AI (line timings are kept).
-correctBtn.addEventListener('click', async () => {
-  if (!result || busy) return;
-  busy = true;
-  setNote(t('correcting'));
-  render();
-  const lines = result.lines.map((l) => ({ ...l, words: l.words ?? [] }));
-  const res = await chrome.runtime
-    .sendMessage({ type: 'CORRECT_LYRICS', lines: lines.map((l) => ({ text: l.text })), title: result.title, artist: result.artist })
-    .catch((e) => ({ ok: false, error: String(e) }));
-  const fixed = res?.ok ? applyCorrection(lines, res.raw) : null;
-  if (fixed) {
-    const updated = { ...result, lines: fixed, corrected: true, createdAt: Date.now() };
-    const path = result.url ? parseTrackUrl(result.url)?.path : null;
-    const store = await chrome.storage.local.get('results');
-    const all = (store.results as Record<string, SavedResult> | undefined) ?? {};
-    if (path) all[trackKey(path)] = updated;
-    await chrome.storage.local.set({ lastResult: updated, results: pruneCache(all) });
-    setNote('');
-  } else {
-    setNote(res?.ok ? t('correctNoChange') : t('correctFailed', { msg: String(res?.error ?? '').slice(0, 80) }), true);
-  }
-  busy = false;
-  lastKey = '';
-  await refresh();
-});
 
 karaokeBtn.addEventListener('click', async () => {
   if (busy) return;
@@ -706,9 +676,7 @@ copyBtn.addEventListener('click', async () => {
 
 async function init() {
   [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const saved = await chrome.storage.local.get(['language', 'monitor', 'translations', 'deepseekKey', 'mode']);
-  // Fixing lyrics is always available in cloud mode (free via Groq) or with your own DeepSeek key.
-  hasDeepseek = (typeof saved.deepseekKey === 'string' && saved.deepseekKey.trim() !== '') || (saved.mode ?? 'cloud') === 'cloud';
+  const saved = await chrome.storage.local.get(['language', 'monitor', 'translations']);
   translations = new Map(Object.entries((saved.translations as Record<string, string> | undefined) ?? {}));
   monitor = saved.monitor === true;
   // If a SoundCloud track is open in the tab, prefill its link.

@@ -5,6 +5,7 @@
 #
 # One-time setup (Settings → Secrets and variables → Actions):
 #   secrets:   GROQ_KEY               - Groq API key (stays on Cloudflare only)
+#              GEMINI_KEY             - Gemini API key for lyrics transcription (optional, stays on Cloudflare only)
 #              CLOUDFLARE_API_TOKEN   - Cloudflare token with "Edit Cloudflare Workers" permission
 #              CLOUDFLARE_ACCOUNT_ID  - Cloudflare account ID
 #              APP_TOKEN              - any string (optional; see proxy/README.md)
@@ -33,6 +34,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       GROQ_KEY: ${{ secrets.GROQ_KEY }}
+      GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
       APP_TOKEN: ${{ secrets.APP_TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -51,6 +53,7 @@ jobs:
           npm install --no-audit --no-fund
           npx wrangler deploy 2>&1 | tee deploy.log
           printf '%s' "$GROQ_KEY" | npx wrangler secret put GROQ_KEY
+          if [ -n "$GEMINI_KEY" ]; then printf '%s' "$GEMINI_KEY" | npx wrangler secret put GEMINI_KEY; fi
           if [ -n "$APP_TOKEN" ]; then printf '%s' "$APP_TOKEN" | npx wrangler secret put APP_TOKEN; fi
           url=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1 || true)
           if [ -z "$url" ]; then

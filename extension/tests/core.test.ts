@@ -663,3 +663,19 @@ test('reconcileChorus: the chorus is reconciled across repeats', async () => {
   const lone = [L('Я иду домой один'), L('Что-то совсем другое тут'), L('Ещё одна строка'), L('Я иду домой одна')];
   assert.equal(reconcileChorus(lone).fixed, 0);
 });
+
+test('gemini: request carries the audio and context; reply is parsed into lines', async () => {
+  const { buildGeminiRequest, parseGeminiLyrics, toBase64 } = await import('../src/core/gemini.ts');
+  const req = buildGeminiRequest('QUJD', { title: 'Night Drive', artist: 'Tester', language: 'ru', draft: 'черновик', glossary: ['флекс'] });
+  const parts = req.contents[0]!.parts as { inline_data?: { mime_type: string; data: string }; text?: string }[];
+  assert.equal(parts[0]!.inline_data!.mime_type, 'audio/wav');
+  assert.equal(parts[0]!.inline_data!.data, 'QUJD');
+  assert.ok(parts[1]!.text!.includes('Night Drive') && parts[1]!.text!.includes('Russian') && parts[1]!.text!.includes('флекс'));
+  assert.equal(req.generationConfig.responseMimeType, 'application/json');
+  const reply = (text: string, finishReason = 'STOP') => ({ candidates: [{ content: { parts: [{ text }] }, finishReason }] });
+  assert.deepEqual(parseGeminiLyrics(reply('{"lines":["[Chorus] Мы летим","  над   Москвой ",""]}')), { ok: true, lines: ['Мы летим', 'над Москвой'] });
+  assert.deepEqual(parseGeminiLyrics(reply('first line\nsecond line')), { ok: true, lines: ['first line', 'second line'] });
+  assert.equal(parseGeminiLyrics({ candidates: [{ content: { parts: [] }, finishReason: 'RECITATION' }] }).ok, false);
+  assert.equal(parseGeminiLyrics({ error: { message: 'quota' } }).ok, false);
+  assert.equal(toBase64(new Uint8Array([65, 66, 67])), 'QUJD');
+});
