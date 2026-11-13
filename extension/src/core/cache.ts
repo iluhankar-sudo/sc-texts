@@ -5,6 +5,8 @@ export interface CachedLine {
   end: number;
   text: string;
   words?: { word: string; start: number; end: number; prob: number }[];
+  chorus?: boolean;
+  raw?: string;
 }
 
 export interface CachedResult {

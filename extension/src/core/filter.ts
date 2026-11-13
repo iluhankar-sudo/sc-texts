@@ -83,7 +83,8 @@ export function cleanSegments(segs: RawSegment[], maxNoSpeech = 0.6): Line[] {
     if (isHallucination(s, text, maxNoSpeech)) continue;
     if (JUNK.some((r) => r.test(text))) continue;
     if (isPromptEcho(text)) continue; // модель повторила подсказку со словарём
-    out.push(tightenStart({ start: s.start, end: s.end, text, words: s.words ?? [] }));
+    const conf = typeof s.avg_logprob === 'number' ? Math.exp(s.avg_logprob) : undefined;
+    out.push(tightenStart({ start: s.start, end: s.end, text, words: s.words ?? [], ...(conf !== undefined ? { conf } : {}) }));
   }
   return out;
 }

@@ -10,6 +10,12 @@ export interface Line {
   end: number;
   text: string;
   words: Word[];
+  /** Уверенность модели в строке 0…1 (из avg_logprob сегмента). */
+  conf?: number;
+  /** Строка припева (повторяется в песне). */
+  chorus?: boolean;
+  /** Исходный распознанный текст, если строка исправлена по другим повторам припева. */
+  raw?: string;
 }
 
 export interface RawSegment {

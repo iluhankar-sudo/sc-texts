@@ -839,7 +839,10 @@ export class Controller {
       first: msg.first,
       last: msg.last,
     });
-    this.set({ lines, coverage: addRange(this.state.coverage, trusted) });
+    // Припев сверяется сразу, а не только в конце: прозвучал повтор — он показывается тем же текстом,
+    // а слова, расслышанные по-разному, выбираются большинством повторов.
+    const ch = lines.length > 3 ? reconcileChorus(lines) : null;
+    this.set({ lines: ch ? ch.lines : lines, coverage: addRange(this.state.coverage, trusted) });
     if (msg.final && msg.engine) this.engine = msg.engine;
   }
 }

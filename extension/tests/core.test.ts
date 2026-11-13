@@ -643,6 +643,17 @@ test('reconcileChorus: припев сводится по повторам', asy
   assert.equal(r.lines[0]!.text, lines[0]!.text); // куплет не тронут
   assert.equal(r.lines[4]!.text, lines[4]!.text);
   assert.equal(r.fixed, 2);
+  assert.ok(r.lines[2]!.chorus && r.lines[6]!.chorus && !r.lines[0]!.chorus);
+  assert.equal(r.lines[6]!.raw, 'Мы летим над ночной Масквой');
+  // Повторная сверка (после следующего куска) не «накапливает» исправления: голосуют исходные тексты.
+  const again = reconcileChorus(r.lines);
+  assert.deepEqual(again.lines.map((l) => l.text), r.lines.map((l) => l.text));
+  // Ничья из двух повторов решается уверенностью модели в строке.
+  t = 0;
+  const conf = [L('Мы летим над ночной Москвой'), L('И никто не знает куда'), L('Куплет'), L('Ещё куплет тут'), L('Мы летим над ночной Масквой'), L('И никто не знает куда')];
+  conf[0] = { ...conf[0]!, words: conf[0]!.words.map((w) => ({ ...w, prob: 1 })), conf: 0.9 };
+  conf[4] = { ...conf[4]!, words: conf[4]!.words.map((w) => ({ ...w, prob: 1 })), conf: 0.5 };
+  assert.equal(reconcileChorus(conf).lines[4]!.text, 'Мы летим над ночной Москвой');
   // Два повтора с разными словами — неизвестно, какой верный: не трогаем.
   t = 0;
   const two = [L('Мы летим над ночной Москвой'), L('И никто не знает куда'), L('Куплет'), L('Ещё куплет тут'), L('Мы летим над ночной Масквой'), L('И никто не знает куда')];

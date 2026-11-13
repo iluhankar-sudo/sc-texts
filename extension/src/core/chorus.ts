@@ -71,7 +71,13 @@ const SIM = 0.6;
 const MIN_WORDS = 2;
 
 /** Находит повторяющиеся строки и сводит их варианты в один текст. */
-export function reconcileChorus(lines: Line[]): ChorusResult {
+export function reconcileChorus(input: Line[]): ChorusResult {
+  // Голосуем всегда по исходному распознаванию (raw), а не по уже исправленному тексту:
+  // иначе исправление прошлого шага считалось бы лишним «голосом».
+  const lines: Line[] = input.map((l) => {
+    const { raw, chorus: _c, ...rest } = l;
+    return raw !== undefined && raw !== l.text ? { ...rest, text: raw } : rest;
+  });
   const n = lines.length;
   const words = lines.map((l) => toks(l.text).length);
   // Похожие пары строк.
@@ -108,17 +114,21 @@ export function reconcileChorus(lines: Line[]): ChorusResult {
   for (const g of groups) {
     const slots = vote(g.map((i) => lines[i]!));
     for (const i of g) {
-      const next = applyVotes(lines[i]!, slots);
-      if (next) {
-        out[i] = next;
-        fixed++;
-      }
+      const src = lines[i]!;
+      const next = applyVotes(src, slots);
+      if (next) fixed++;
+      out[i] = { ...(next ?? src), raw: src.text, chorus: true };
     }
   }
   return { lines: out, groups, fixed };
 }
 
 const avgProb = (l: Line) => (l.words.length ? l.words.reduce((a, w) => a + (w.prob ?? 1), 0) / l.words.length : 1);
+/** Вес голоса слова: своя уверенность модели, а если её нет (Groq) — уверенность всей строки. */
+const weightOf = (l: Line, k: number) => {
+  const p = l.words[k]?.prob;
+  return p !== undefined && p < 1 ? p : (l.conf ?? 1);
+};
 
 interface Slots {
   base: string[];
@@ -145,7 +155,7 @@ function vote(variants: Line[]): Slots {
     for (const [i, j] of alignWords(bn, vn)) {
       if (wordSim(bn[i]!, vn[j]!) < 0.5 || !vn[j]) continue;
       const cur = votes[i]!.get(vn[j]!) ?? { raw: vw[j]!, weight: 0 };
-      cur.weight += v.words[j]?.prob ?? avgProb(v);
+      cur.weight += weightOf(v, j);
       votes[i]!.set(vn[j]!, cur);
     }
   }
@@ -166,7 +176,7 @@ function applyVotes(l: Line, slots: Slots): Line | null {
     const own = m.get(wn[j]!)?.weight ?? 0;
     let best: { key: string; raw: string; weight: number } | null = null;
     for (const [key, c] of m) if (!best || c.weight > best.weight) best = { key, ...c };
-    if (!best || best.key === wn[j] || best.weight <= own) continue;
+    if (!best || best.key === wn[j] || best.weight <= own + 0.02) continue;
     ws[j] = keepPunct(ws[j]!, best.raw);
     changed = true;
   }

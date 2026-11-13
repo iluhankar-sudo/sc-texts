@@ -117,6 +117,7 @@ interface ViewLine {
   end: number;
   text: string;
   words?: { word: string; start: number }[];
+  chorus?: boolean;
 }
 
 /** Длинные тире (— и –) в тексте песни заменяем обычным дефисом. */
@@ -143,10 +144,18 @@ function renderLines(baseKey: string, lines: ViewLine[], intro: boolean, karaoke
     n.textContent = '♪';
     nodes.push(n);
   }
-  for (const l of lines) {
+  lines.forEach((l, idx) => {
     const d = document.createElement('div');
     d.className = 'line';
     d.dataset.t = String(l.start);
+    // Припев: найденные повторы помечаются, у первой строки каждого припева — подпись.
+    if (l.chorus) {
+      d.classList.add('chorus');
+      if (!lines[idx - 1]?.chorus) {
+        d.classList.add('chorusStart');
+        d.dataset.label = t('chorusLabel');
+      }
+    }
     const words = karaoke ? (l.words ?? []).filter((w) => w.word) : [];
     if (words.length) {
       words.forEach((w, i) => {
@@ -167,7 +176,7 @@ function renderLines(baseKey: string, lines: ViewLine[], intro: boolean, karaoke
       d.append(t);
     }
     nodes.push(d);
-  }
+  });
   listEl.replaceChildren(...nodes);
   karaokeLines = karaoke ? lines.map((l) => ({ start: l.start, end: l.end, words: (l.words ?? []).filter((w) => w.word) })) : [];
 }
@@ -324,11 +333,11 @@ function render() {
       // Текст без таймингов (из LRCLIB) показываем целиком, без подсветки.
       const synced = state!.synced !== false;
       seekable = synced;
-      renderLines(`k:${synced}:${lines.map((l) => `${l.start}|${l.text}`).join('\n')}`, lines, synced, synced);
+      renderLines(`k:${synced}:${lines.map((l) => `${l.start}|${l.text}|${l.chorus ? 1 : 0}`).join('\n')}`, lines, synced, synced);
       return;
     }
     seekable = false;
-    renderLines(`a:${lines.map((l) => `${l.start}|${l.text}`).join('\n')}`, lines, true, false);
+    renderLines(`a:${lines.map((l) => `${l.start}|${l.text}|${l.chorus ? 1 : 0}`).join('\n')}`, lines, true, false);
     // Прокрутка к последней распознанной строке
     const target = lines.length;
     if (target !== lastTarget) {

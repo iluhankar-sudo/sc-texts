@@ -176,3 +176,7 @@ body.editing #list, body.editing .actions:not(.editActions) { display: none !imp
 .lyrics.seekable .line:not(.note) { cursor: pointer; border-radius: 10px; padding: 2px 8px; margin-left: -8px; margin-right: -8px; transition: background-color .12s, color .35s, opacity .35s; }
 .lyrics.seekable .line:not(.note):hover { background: rgba(255,255,255,.06); }
 .lyrics.seekable .line.tap { background: rgba(255,255,255,.12); }
+
+/* Припев */
+.line.chorusStart::before { content: attr(data-label); display: block; margin-bottom: 4px; font-size: 10.5px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase; color: #ff9a3d; opacity: .9; }
