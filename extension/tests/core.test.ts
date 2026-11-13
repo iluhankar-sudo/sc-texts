@@ -613,3 +613,42 @@ test('retimeEdited: правка текста сохраняет тайминг�
   assert.equal(merged.length, 2);
   assert.ok(Math.abs(merged[0]!.start - 1) < 0.01 && Math.abs(merged[1]!.start - 7) < 0.01);
 });
+
+test('reconcileChorus: припев сводится по повторам', async () => {
+  const { reconcileChorus } = await import('../src/core/chorus.ts');
+  let t = 0;
+  const L = (text: string, probs?: number[]) => {
+    const ws = text.split(' ');
+    const start = t;
+    const words = ws.map((word, k) => ({ word, start: start + k * 0.4, end: start + k * 0.4 + 0.35, prob: probs?.[k] ?? 0.9 }));
+    t += 4;
+    return { start, end: start + 3.5, text, words };
+  };
+  const lines = [
+    L('Я выхожу из дома рано'),
+    L('Город ещё спит'),
+    L('Мы летим над ночной Москвой'), // припев 1
+    L('И никто не знает куда'),
+    L('Второй куплет совсем другой'),
+    L('Про что-то своё'),
+    L('Мы летим над ночной Масквой', [0.9, 0.9, 0.9, 0.9, 0.3]), // припев 2 — ошибка
+    L('И никто не знает куда'),
+    L('Мы летим над ночной Москвой'), // припев 3
+    L('И никто не знает когда', [0.9, 0.9, 0.9, 0.9, 0.2]),
+  ];
+  const r = reconcileChorus(lines);
+  assert.equal(r.lines[6]!.text, 'Мы летим над ночной Москвой');
+  assert.equal(r.lines[9]!.text, 'И никто не знает куда');
+  assert.equal(r.lines[6]!.start, lines[6]!.start); // время своё
+  assert.equal(r.lines[0]!.text, lines[0]!.text); // куплет не тронут
+  assert.equal(r.lines[4]!.text, lines[4]!.text);
+  assert.equal(r.fixed, 2);
+  // Два повтора с разными словами — неизвестно, какой верный: не трогаем.
+  t = 0;
+  const two = [L('Мы летим над ночной Москвой'), L('И никто не знает куда'), L('Куплет'), L('Ещё куплет тут'), L('Мы летим над ночной Масквой'), L('И никто не знает куда')];
+  assert.equal(reconcileChorus(two).fixed, 0);
+  // Одна случайно похожая строка без соседей-повторов — не припев.
+  t = 0;
+  const lone = [L('Я иду домой один'), L('Что-то совсем другое тут'), L('Ещё одна строка'), L('Я иду домой одна')];
+  assert.equal(reconcileChorus(lone).fixed, 0);
+});

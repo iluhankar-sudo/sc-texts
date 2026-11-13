@@ -15,6 +15,7 @@
  */
 import { PlaybackClock } from '../core/clock.ts';
 import { DEFAULT_CONFIG } from '../core/config.ts';
+import { reconcileChorus } from '../core/chorus.ts';
 import { cleanSegments, dropRepeatedRuns, dropTitleEcho, isTitleEcho, tightenStart } from '../core/filter.ts';
 import { pruneCache, trackKey, type CachedResult } from '../core/cache.ts';
 import { applyCorrection } from '../core/correct.ts';
@@ -655,6 +656,13 @@ export class Controller {
     this.altText = this.previewText || null;
     const finalText = this.state.lines.map((l) => l.text).join('\n');
     if (finalText === this.altText) this.altText = null; // второй вариант ничего не добавляет
+
+    // Припев: повторы сверяются между собой, ошибки одного повтора исправляются по другим.
+    if (this.state.lines.length > 3) {
+      const ch = reconcileChorus(this.state.lines);
+      this.log(`припев: повторяющихся групп ${ch.groups.length}, исправлено строк ${ch.fixed}`);
+      if (ch.fixed) this.set({ lines: ch.lines });
+    }
 
     // Есть готовый текст без таймингов — берём его (он точнее распознавания), а время — из распознавания.
     const ref = this.referenceText();
