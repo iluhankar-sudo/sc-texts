@@ -1,4 +1,4 @@
-/** Моно-даунсэмплинг Float32 → Int16 с усреднением (простой ФНЧ) до dstRate. */
+/** Mono downsampling Float32 → Int16 with averaging (a simple low-pass filter) to dstRate. */
 export function toMono16k(input: Float32Array, srcRate: number, dstRate = 16000): Int16Array {
   const ratio = srcRate / dstRate;
   const outLen = Math.floor(input.length / ratio);
@@ -15,9 +15,9 @@ export function toMono16k(input: Float32Array, srcRate: number, dstRate = 16000)
 }
 
 /**
- * Звук для Whisper: моно 16 кГц, без басов и с выровненной громкостью.
- * - ФВЧ ~120 Гц (Баттерворт 2-го порядка): бочка и бас почти не несут голоса, но «забивают» модель.
- * - Нормализация по пику до −1 dBFS (усиление не больше ×8): тихие треки распознаются так же, как громкие.
+ * Audio for Whisper: mono 16 kHz, without bass and with levelled volume.
+ * - High-pass ~120 Hz (2nd-order Butterworth): kick and bass carry almost no voice but "clog" the model.
+ * - Peak normalization to -1 dBFS (gain at most x8): quiet tracks are recognized as well as loud ones.
  */
 export function toAsrPcm(input: Float32Array, srcRate: number, dstRate = 16000): Int16Array {
   const f = toMonoFloat(input, srcRate, dstRate);
@@ -36,7 +36,7 @@ export function toAsrPcm(input: Float32Array, srcRate: number, dstRate = 16000):
   return out;
 }
 
-/** Даунсэмплинг с усреднением (простой ФНЧ), результат во Float32. */
+/** Downsampling with averaging (a simple low-pass filter), result in Float32. */
 export function toMonoFloat(input: Float32Array, srcRate: number, dstRate: number): Float32Array {
   const ratio = srcRate / dstRate;
   const outLen = Math.floor(input.length / ratio);
@@ -51,7 +51,7 @@ export function toMonoFloat(input: Float32Array, srcRate: number, dstRate: numbe
   return out;
 }
 
-/** Фильтр высоких частот (биквад, Баттерворт 2-го порядка) — на месте. */
+/** High-pass filter (biquad, 2nd-order Butterworth) - in place. */
 export function highPass(x: Float32Array, sampleRate: number, cutoff: number): Float32Array {
   const w = (2 * Math.PI * cutoff) / sampleRate;
   const cos = Math.cos(w);
@@ -75,7 +75,7 @@ export function highPass(x: Float32Array, sampleRate: number, cutoff: number): F
   return x;
 }
 
-/** WAV (PCM16, моно). */
+/** WAV (PCM16, mono). */
 export function encodeWav(samples: Int16Array, sampleRate: number): ArrayBuffer {
   const buf = new ArrayBuffer(44 + samples.length * 2);
   const v = new DataView(buf);
@@ -109,7 +109,7 @@ export function concatFloat32(blocks: Float32Array[], total: number): Float32Arr
   return out;
 }
 
-/** Индекс первого не-тихого сэмпла или -1 (вкладка ещё молчит: трек не начал играть). */
+/** Index of the first non-silent sample or -1 (the tab is still silent: the track hasn't started). */
 export function firstNonSilent(block: Float32Array, threshold = 1e-4): number {
   for (let i = 0; i < block.length; i++) if (Math.abs(block[i]!) > threshold) return i;
   return -1;

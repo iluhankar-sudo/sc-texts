@@ -13,7 +13,7 @@ body {
   font: 15px/1.35 -apple-system, "SF Pro Display", "Segoe UI", Roboto, system-ui, sans-serif; color: var(--text);
   background: #1a1210;
 }
-/* Тёплый фон: размытая обложка трека поверх градиента */
+/* Warm background: blurred track artwork over a gradient */
 .bg {
   position: absolute; inset: -40px; z-index: -1;
   background:
@@ -68,7 +68,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .start:active { transform: scale(.97); }
 .start:disabled { opacity: .4; cursor: default; }
 
-/* Поле для ссылки */
+/* Link field */
 .link { display: flex; align-items: center; gap: 6px; margin: 12px 14px 0; padding: 4px 4px 4px 14px; border-radius: 999px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.12); transition: border-color .15s, background .15s; }
 .link:focus-within { border-color: rgba(255,255,255,.4); background: rgba(255,255,255,.14); }
 .link input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--text); font: inherit; font-size: 14px; padding: 8px 0; }
@@ -80,12 +80,12 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .go:active { transform: scale(.94); }
 .go:disabled { opacity: .35; cursor: default; }
 
-/* Прогресс прослушивания */
+/* Listening progress */
 .progress { display: flex; align-items: center; gap: 10px; padding: 10px 22px 0; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .bar { flex: 1; height: 3px; border-radius: 3px; background: rgba(255,255,255,.18); overflow: hidden; }
 .bar i { display: block; height: 100%; width: 0; background: #fff; border-radius: 3px; transition: width .3s linear; }
 
-/* Кнопка «Копировать текст» в стиле «Поделиться» */
+/* "Copy lyrics" button styled like "Share" */
 .share {
   position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
   display: flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 999px;
@@ -95,22 +95,22 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .share { white-space: nowrap; }
 .lyrics { padding-top: 26px; }
 
-/* Караоке: текущая строка яркая, остальные приглушены, слова загораются по мере пения */
+/* Karaoke: the current line is bright, the rest are dimmed */
 .lyrics.karaoke .line { color: rgba(255,255,255,.32); transition: color .35s, opacity .35s; }
 .lyrics.karaoke .line.past { color: rgba(255,255,255,.22); }
-.lyrics.karaoke .line.on { color: #fff; text-shadow: 0 0 18px rgba(255,255,255,.25); } /* строка целиком */
+.lyrics.karaoke .line.on { color: #fff; text-shadow: 0 0 18px rgba(255,255,255,.25); } /* the whole line */
 .lyrics.karaoke .line.on.plain { color: #fff; }
 .lyrics.karaoke .line .w { transition: color .18s ease-out, text-shadow .18s; }
 .lyrics.karaoke .line.on .w.sung { color: #fff; text-shadow: 0 0 18px rgba(255,255,255,.25); }
 .lyrics.karaoke .line.note.on { color: #fff; }
 
-/* Перевод под строкой */
+/* Translation under a line */
 .line .tr { display: block; margin-top: 5px; font-size: 15px; line-height: 1.3; font-weight: 600; letter-spacing: 0; color: rgba(255,255,255,.62); }
 .lyrics.karaoke .line .tr { color: inherit; opacity: .85; }
 .lyrics.karaoke .line.on .tr { color: rgba(255,255,255,.8); opacity: 1; }
 .icon.ghost.on { color: var(--accent); }
 
-/* Нижняя панель: «Перевести» и «Копировать» */
+/* Bottom bar: "Translate" and "Copy" */
 .actions { position: absolute; left: 0; right: 0; bottom: 18px; display: flex; justify-content: center; gap: 10px; pointer-events: none; }
 .actions .share { position: static; transform: none; pointer-events: auto; padding: 11px 18px; font-size: 14px; }
 .actions .share:active { transform: scale(.97); }
@@ -118,31 +118,31 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .actions .share.alt { background: rgba(255,255,255,.16); color: #fff; box-shadow: none; backdrop-filter: blur(12px); }
 .lyrics { padding-bottom: 150px; }
 
-/* Без полосы прокрутки у всего окошка: фон не должен выходить за края */
+/* No scrollbar on the whole popup: the background must not overflow */
 html, body { overflow: hidden; scrollbar-width: none; }
 html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .bg { position: fixed; inset: 0; }
 .bg.cover { transform: scale(1.35); }
 
-/* Строка статуса с кнопкой «Распознать по звуку» */
+/* Status line with link-style buttons */
 .statusRow { display: flex; align-items: baseline; gap: 10px; padding-right: 22px; }
 .statusRow .status { flex: 1; min-width: 0; }
 .linkBtn { flex: none; font-size: 12px; font-weight: 600; color: rgba(255,255,255,.75); text-decoration: underline; text-underline-offset: 3px; padding: 8px 0 0; }
 .linkBtn:hover { color: #fff; }
 .linkBtn:disabled { opacity: .4; cursor: default; }
-/* Две кнопки внизу должны помещаться: «Копировать» становится круглой иконкой */
+/* Both bottom buttons must fit: "Copy" becomes a round icon */
 .actions { padding: 0 14px; }
 .actions .share.iconOnly { padding: 11px; }
 .actions .share.iconOnly span { display: none; }
-/* Без вкладок языка: статус сразу под полем ссылки */
+/* Without language tabs: status right under the link field */
 .statusRow { margin-top: 6px; }
-/* Статус — своей строкой, кнопки-ссылки — строкой ниже */
+/* Status on its own line, link buttons on the line below */
 .statusRow { flex-wrap: wrap; row-gap: 0; column-gap: 16px; padding-left: 22px; padding-right: 22px; }
 .statusRow .status { flex: 1 1 100%; padding-left: 0; padding-right: 0; }
 .statusRow .linkBtn { padding-top: 4px; }
 
-/* Закреп текста за треком */
-.actions .share.tipbtn { position: relative; left: auto; bottom: auto; transform: none; } /* без сдвига базового .share */
+/* Pin lyrics to the track */
+.actions .share.tipbtn { position: relative; left: auto; bottom: auto; transform: none; } /* undo the base .share offset */
 .actions .share.pin.on { background: var(--accent, #ff7a00); color: #1a0d00; }
 .actions .share.pin.on svg path:first-child { fill: currentColor; }
 .actions .share.tipbtn .tip { display: block !important; position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
@@ -150,11 +150,11 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; width: 0; heig
   background: rgba(20,14,12,.92); color: rgba(255,255,255,.9); box-shadow: 0 4px 14px rgba(0,0,0,.35);
   opacity: 0; pointer-events: none; transition: opacity .15s ease; }
 .actions .share.tipbtn:hover .tip, .actions .share.tipbtn:focus-visible .tip { opacity: 1; }
-/* подсказка у крайней правой кнопки — к правому краю, чтобы не вылезать за окошко */
+/* the rightmost button's tooltip aligns to the right edge so it stays inside the popup */
 .actions .share.tipbtn:last-child .tip { left: auto; right: 0; transform: none; }
 .actions .share#karaoke.on { background: var(--accent, #ff7a00); color: #1a0d00; }
 
-/* Компактные кнопки и аккуратные мгновенные подсказки */
+/* Compact buttons and neat instant tooltips */
 .actions { gap: 8px; bottom: 16px; }
 .actions .share { padding: 8px 14px; font-size: 13px; gap: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
 .actions .share.iconOnly { padding: 8px; }
@@ -164,7 +164,7 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; width: 0; heig
   background: rgba(15,10,9,.94); color: #fff; box-shadow: 0 3px 10px rgba(0,0,0,.35); transition: none; }
 .actions .share.tipbtn.flash .tip { opacity: 1; }
 
-/* Правка текста вручную */
+/* Manual lyrics editing */
 .editor { flex: 1; min-height: 0; margin: 4px 14px 70px; padding: 12px 14px; resize: none; border: 1px solid rgba(255,255,255,.18);
   border-radius: 14px; background: rgba(0,0,0,.28); color: #fff; font-family: inherit; font-size: 16px; font-weight: 600; line-height: 1.55; outline: none;
   scrollbar-width: thin; position: relative; z-index: 1; }
@@ -172,7 +172,7 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; width: 0; heig
 body.editing #list, body.editing .actions:not(.editActions) { display: none !important; }
 .editActions[hidden] { display: none !important; }
 
-/* Перемотка кликом по строке */
+/* Click a line to seek */
 .lyrics.seekable .line:not(.note) { cursor: pointer; border-radius: 10px; padding: 2px 8px; margin-left: -8px; margin-right: -8px; transition: background-color .12s, color .35s, opacity .35s; }
 .lyrics.seekable .line:not(.note):hover { background: rgba(255,255,255,.06); }
 .lyrics.seekable .line.tap { background: rgba(255,255,255,.12); }

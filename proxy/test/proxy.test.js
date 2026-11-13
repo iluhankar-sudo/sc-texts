@@ -6,7 +6,7 @@ const calls = [];
 globalThis.fetch = async (url, init) => {
   calls.push({ url, init });
   if (String(url).endsWith('/audio/transcriptions')) return new Response(JSON.stringify({ text: 'ok', segments: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-  return new Response(JSON.stringify({ choices: [{ message: { content: 'перевод' } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify({ choices: [{ message: { content: 'translation' } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 };
 const env = (extra = {}) => ({ GROQ_KEY: 'gsk_test', ...extra });
 const audioForm = (model = 'whisper-large-v3') => {

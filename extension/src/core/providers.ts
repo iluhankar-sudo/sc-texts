@@ -1,11 +1,11 @@
 /**
- * Разбор ответов дополнительных источников готовых текстов: Genius (текст без таймингов),
- * NetEase и Kugou (тексты LRC с таймингами строк). Только чистая логика — сеть в src/providers.ts.
+ * Parsing replies from additional ready-lyrics sources: Genius (lyrics without timings),
+ * NetEase and Kugou (LRC lyrics with line timings). Pure logic only - networking is in src/providers.ts.
  *
- * Извлечение текста со страницы Genius адаптировано из Riff (github.com/rootscripts/riff, MIT).
+ * Lyrics extraction from Genius pages is adapted from Riff (github.com/rootscripts/riff, MIT).
  */
 
-/** Нормализация для сравнения: нижний регистр, ё→е, кириллица → латиница, без знаков и «feat …». */
+/** Normalization for comparison: lowercase, ё→е, Cyrillic → Latin, no punctuation or "feat ...". */
 export function normName(s: string | null | undefined): string {
   return translit(
     (s ?? '')
@@ -27,7 +27,7 @@ function translit(s: string): string {
   return s.replace(/[а-я]/g, (c) => TR[c] ?? c);
 }
 
-/** Похожи ли две строки (одна содержит другую или почти совпадают). */
+/** Whether two strings are similar (one contains the other or they almost match). */
 function similar(a: string, b: string): boolean {
   if (!a || !b) return false;
   if (a === b) return true;
@@ -51,8 +51,8 @@ export function levRatio(a: string, b: string): number {
 }
 
 /**
- * Строгая сверка кандидата: название должно совпасть, исполнитель — тоже (или совпасть длительность).
- * Неправильный текст хуже никакого, поэтому сомнительные варианты отбрасываются.
+ * Strict candidate check: the title must match, and the artist too (or the duration).
+ * Wrong lyrics are worse than none, so doubtful candidates are rejected.
  */
 export function strictMatch(
   want: { title: string; artist: string | null; duration?: number | null },
@@ -80,7 +80,7 @@ export interface GeniusHit {
   artist: string;
 }
 
-/** Песни из ответа genius.com/api/search/multi (или /search/song). */
+/** Songs from a genius.com/api/search/multi (or /search/song) reply. */
 export function geniusHits(json: unknown): GeniusHit[] {
   const out: GeniusHit[] = [];
   const sections = (json as { response?: { sections?: { hits?: unknown[] }[]; hits?: unknown[] } })?.response;
@@ -96,7 +96,7 @@ export function geniusHits(json: unknown): GeniusHit[] {
   return out;
 }
 
-/** Текст песни из HTML страницы Genius (блоки data-lyrics-container). */
+/** Song lyrics from a Genius page's HTML (data-lyrics-container blocks). */
 export function extractGeniusLyrics(html: string): string {
   let lyrics = '';
   const marker = 'data-lyrics-container="true"';
@@ -138,7 +138,7 @@ export function extractGeniusLyrics(html: string): string {
     .replace(/&nbsp;/g, ' ')
     .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)))
     .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)));
-  // [Куплет 1], [Припев: …] — разметка Genius, не текст.
+  // [Verse 1], [Chorus: ...] - Genius markup, not lyrics.
   text = text.replace(/\[[^\]]*\]/g, '').replace(/\n{3,}/g, '\n\n');
   const lines = text
     .split('\n')
@@ -174,7 +174,7 @@ export function neteaseSongs(json: unknown): NeteaseSong[] {
     }));
 }
 
-/** LRC из ответа /api/song/lyric (пусто, если текста нет или это «纯音乐» — инструментал). */
+/** LRC from an /api/song/lyric reply (empty if there are no lyrics or it's "纯音乐", an instrumental). */
 export function neteaseLrc(json: unknown): string {
   const j = json as { lrc?: { lyric?: string }; nolyric?: boolean; uncollected?: boolean };
   if (j?.nolyric || j?.uncollected) return '';
@@ -207,7 +207,7 @@ export function kugouCandidates(json: unknown): KugouCandidate[] {
     });
 }
 
-/** Ответ /download: LRC в base64 (UTF-8). */
+/** /download reply: LRC in base64 (UTF-8). */
 export function kugouLrc(json: unknown): string {
   const b64 = (json as { content?: string })?.content;
   if (!b64) return '';
@@ -220,7 +220,7 @@ export function kugouLrc(json: unknown): string {
   }
 }
 
-/** Убирает служебные теги LRC ([ti:], [ar:], [by:] …) и строки «作词/作曲» (автор слов/музыки). */
+/** Removes LRC service tags ([ti:], [ar:], [by:] ...) and "作词/作曲" lines (lyricist/composer). */
 export function stripLrcMeta(lrc: string): string {
   return lrc
     .split(/\r?\n/)
@@ -230,7 +230,7 @@ export function stripLrcMeta(lrc: string): string {
     .trim();
 }
 
-/** В LRC действительно есть тайминги (а не «[00:00.00] весь текст одной строкой»). */
+/** The LRC really has timings (rather than "[00:00.00] the whole text on one line"). */
 export function hasTimings(lrc: string): boolean {
   const stamps = lrc.match(/\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]/g) ?? [];
   return new Set(stamps).size >= 3;

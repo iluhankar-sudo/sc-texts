@@ -1,6 +1,6 @@
 /**
- * Название и исполнитель трека, когда официальный oEmbed SoundCloud не ответил:
- * из HTML страницы трека или, в крайнем случае, из самой ссылки.
+ * Track title and artist when SoundCloud's official oEmbed didn't answer:
+ * from the track page HTML or, as a last resort, from the link itself.
  */
 
 export interface PageMeta {
@@ -29,12 +29,12 @@ function metaContent(html: string, key: string): string | null {
   return m?.[1] ? decode(m[1]) : null;
 }
 
-/** Метаданные из HTML страницы трека SoundCloud (og:title, twitter:audio:artist_name, <title>, длительность). */
+/** Metadata from a SoundCloud track page's HTML (og:title, twitter:audio:artist_name, <title>, duration). */
 export function metaFromHtml(html: string): PageMeta | null {
   let title = metaContent(html, 'og:title') ?? metaContent(html, 'twitter:title');
   let uploader = metaContent(html, 'twitter:audio:artist_name') ?? metaContent(html, 'soundcloud:user');
   if (uploader && /^https?:/.test(uploader)) uploader = null;
-  // <title>Название by Исполнитель | Listen online for free on SoundCloud</title>
+  // <title>Title by Artist | Listen online for free on SoundCloud</title>
   const docTitle = /<title[^>]*>([^<]+)<\/title>/i.exec(html)?.[1];
   if (docTitle) {
     const t = decode(docTitle).replace(/\s*\|\s*[^|]*SoundCloud.*$/i, '').replace(/^Stream\s+/i, '');
@@ -46,12 +46,12 @@ export function metaFromHtml(html: string): PageMeta | null {
   }
   if (!title) return null;
   const artwork = metaContent(html, 'og:image');
-  // "duration":214567 в данных страницы (мс)
+  // "duration":214567 in the page data (ms)
   const dur = /"duration"\s*:\s*(\d{4,8})/.exec(html)?.[1];
   return { title, uploader, artwork, duration: dur ? Math.round(Number(dur) / 1000) : null };
 }
 
-/** Последний шанс: «/okishslay3r/song-for-love-feat-kinderlil» → «okishslay3r», «song for love feat kinderlil». */
+/** Last resort: "/okishslay3r/song-for-love-feat-kinderlil" → "okishslay3r", "song for love feat kinderlil". */
 export function metaFromPath(path: string | null): PageMeta | null {
   const parts = (path ?? '').split('/').filter(Boolean);
   if (parts.length < 2) return null;

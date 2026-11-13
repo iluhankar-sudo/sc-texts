@@ -1,7 +1,7 @@
 /**
- * Расширение обновили или перезагрузили, а страница осталась открытой: старая копия content script
- * продолжает работать, но любое обращение к chrome.* бросает «Extension context invalidated».
- * Такая копия должна тихо отключиться (новая подключится сама — см. background, onInstalled).
+ * The extension was updated or reloaded while the page stayed open: the old content script copy
+ * keeps running, but any chrome.* call throws "Extension context invalidated".
+ * Such a copy must quietly shut down (the new one connects itself - see background, onInstalled).
  */
 export function extensionAlive(): boolean {
   try {

@@ -8,7 +8,7 @@ import { requestTabAudio, startStreaming, stopPageCapture } from './page-capture
 import { t } from '../core/i18n.ts';
 import { extensionAlive } from './alive.ts';
 
-/** Интерфейс живёт в popup; content script только следит за плеером и собирает строки. */
+/** The UI lives in the popup; the content script only watches the player and builds lines. */
 const controller = new Controller();
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -17,7 +17,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse(controller.getSnapshot());
       return false;
     case 'KARAOKE_START':
-      // Караоке без захвата звука: только подсветка сохранённого текста.
+      // Karaoke without audio capture: only highlighting of saved lyrics.
       chrome.storage.local
         .get(null)
         .then((raw) => {
@@ -31,12 +31,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse(readPlayer());
       return false;
     case 'SEEK_TO':
-      // Клик по строке в окошке: перемотка на её начало (как на YouTube и в Spotify).
+      // Click on a line in the popup: seek to its start (like YouTube and Spotify).
       void seekTo(msg.path ?? null, Math.max(0, Number(msg.time) || 0)).then(sendResponse);
       return true;
     case 'LINK_START':
       hideHint();
-      // Трек по ссылке на уже открытом SoundCloud: без перехода на его страницу.
+      // Linked track on an already open SoundCloud: without navigating to its page.
       controller.start(normalizeConfig(msg.config), { mode: 'link', url: msg.url, path: msg.path, inPage: true, speed: msg.speed });
       sendResponse({ ok: true });
       return false;
@@ -45,7 +45,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ ok: true });
       return false;
     case 'CAPTURE_STOPPED':
-      stopPageCapture(); // убирает и полоску Chrome «Вы показываете эту вкладку»
+      stopPageCapture(); // also removes Chrome's "You are sharing this tab" bar
       if (controller.getSnapshot().mode === 'link') controller.stop();
       return false;
     case 'CHUNK_RESULT':
@@ -64,8 +64,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return false;
 });
 
-// Страница могла открыться по ссылке из окошка (или перезагрузиться во время захвата):
-// спрашиваем у фонового скрипта, есть ли для этой вкладки задание.
+// The page may have been opened from a popup link (or reloaded during capture):
+// ask the background script whether there is a job for this tab.
 function askForJob(retries: number) {
   if (!extensionAlive()) return;
   chrome.runtime
@@ -74,22 +74,22 @@ function askForJob(retries: number) {
       const cap = res?.capture;
       if (cap) controller.start(normalizeConfig(cap.config), { mode: cap.mode, url: cap.url, path: cap.path, speed: cap.speed });
       else if (res?.karaoke) {
-        // Вкладка открыта кнопкой 🎤: караоке для этого трека.
+        // The tab was opened with the 🎤 button: karaoke for this track.
         void chrome.storage.local.get(null).then((raw) => {
           controller.start(normalizeConfig(raw), { mode: 'karaoke' });
           playForKaraoke(String(res.karaoke.path));
         });
       } else if (res?.pending) showHint();
-      else if (retries > 0) setTimeout(() => askForJob(retries - 1), 1500); // вкладку могли зарегистрировать чуть позже
+      else if (retries > 0) setTimeout(() => askForJob(retries - 1), 1500); // the tab may be registered a bit later
     })
     .catch(() => {});
 }
 askForJob(4);
 
 /**
- * Караоке по кнопке 🎤: включить этот трек (одно нажатие — кнопка play у SoundCloud переключатель).
- * В новой вкладке Chrome может не дать включить звук без клика по странице — тогда маленькая
- * плашка с кнопкой «Включить трек».
+ * Karaoke via the 🎤 button: start this track (one press - SoundCloud's play button is a toggle).
+ * In a new tab Chrome may block sound without a click on the page - then a small
+ * bar with a "Play track" button is shown.
  */
 function playForKaraoke(path: string) {
   const norm = (x: string) => x.toLowerCase().replace(/\/+$/, '');
@@ -139,10 +139,10 @@ function showKaraokeHint(press: () => void) {
 }
 
 /**
- * Подсказка во вкладке, открытой по ссылке: одна кнопка «Начать распознавание».
- * По нажатию Chrome спрашивает разрешение записать эту вкладку («Разрешить»), после чего трек
- * включается и распознаётся с начала. Клик по кнопке заодно снимает запрет Chrome на автозапуск
- * звука в новой вкладке. Запасной способ — клик по иконке расширения (Alt+Shift+S).
+ * Hint in a tab opened from a link: a single "Start recognition" button.
+ * On click Chrome asks for permission to record this tab ("Allow"), after which the track
+ * starts and is recognized from the beginning. The click also lifts Chrome's autoplay block
+ * in a new tab. Fallback: click the extension icon (Alt+Shift+S).
  */
 let hintHost: HTMLElement | null = null;
 let hintRoot: ShadowRoot | null = null;
@@ -199,7 +199,7 @@ function showHint() {
       stopPageCapture();
       return fail('capFailed');
     }
-    // Распознавание запущено (подсказку уже убрал LINK_START) — передаём звук.
+    // Recognition started (LINK_START already removed the hint) - stream the audio.
     startStreaming(audio, () => void chrome.runtime.sendMessage({ type: 'STOP_CAPTURE' }).catch(() => {}));
   });
   document.documentElement.append(hintHost);
@@ -211,12 +211,12 @@ function hideHint() {
   hintRoot = null;
 }
 
-// Новые сохранённые тексты сразу доступны караоке.
+// Newly saved lyrics are available to karaoke right away.
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.results) controller.reloadCache(changes.results.newValue as never);
 });
 
-/** Перемотка трека на время строки; трек не в плеере, но открыта его страница — сначала включаем. */
+/** Seek the track to a line's time; if the track isn't in the player but its page is open, start it first. */
 async function seekTo(path: string | null, time: number): Promise<{ ok: boolean; reason?: string }> {
   let p = readPlayer();
   const onPage = !!path && location.pathname.toLowerCase().replace(/\/+$/, '') === path;
@@ -230,7 +230,7 @@ async function seekTo(path: string | null, time: number): Promise<{ ok: boolean;
     if (!p.trackId || !isSameTrack(p.trackId, path!)) return { ok: false, reason: 'notStarted' };
   }
   const dur = readMedia()?.duration || p.duration || 0;
-  // Через полосу прогресса SoundCloud сам подгружает нужный кусок; иначе — напрямую в медиа.
+  // Via the progress bar SoundCloud loads the needed part itself; otherwise straight into the media element.
   if (!(dur > 0 && seekViaUi(time / dur))) controlMedia('seek', undefined, time);
   if (!readPlayer().playing) clickPlayControl();
   return { ok: true };

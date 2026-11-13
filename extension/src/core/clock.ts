@@ -4,15 +4,15 @@ interface Anchor {
   wall: number;
   pos: number;
   playing: boolean;
-  /** Скорость воспроизведения (секунд трека за секунду). */
+  /** Playback rate (track seconds per second). */
   rate: number;
 }
 
 /**
- * Часы воспроизведения. Плеер SoundCloud показывает время с точностью до секунды,
- * поэтому позиция уточняется по моментам смены целой секунды (опрос ~100 мс даёт ±0.1 с),
- * а между ними интерполируется. Хранит историю якорей, чтобы позже узнать позицию
- * трека в произвольный прошлый момент (начало аудиоокна).
+ * Playback clock. The SoundCloud player shows time to the second,
+ * so the position is refined at the moments the whole second changes (~100 ms polling gives ±0.1 s)
+ * and interpolated in between. It keeps a history of anchors to later find the track
+ * position at an arbitrary past moment (the start of an audio window).
  */
 export class PlaybackClock {
   private anchor: Anchor = { wall: 0, pos: 0, playing: false, rate: 1 };
@@ -63,13 +63,13 @@ export class PlaybackClock {
     return 'none';
   }
 
-  /** Текущая оценка позиции. */
+  /** Current position estimate. */
   now(wall: number): number {
     const a = this.anchor;
     return a.playing ? a.pos + ((wall - a.wall) / 1000) * a.rate : a.pos;
   }
 
-  /** Меняет скорость воспроизведения (позиция до этого момента сохраняется). */
+  /** Changes the playback rate (the position up to this moment is kept). */
   setRate(rate: number, wall: number) {
     if (!(rate > 0) || rate === this.rate) return;
     const pos = this.now(wall);
@@ -77,7 +77,7 @@ export class PlaybackClock {
     if (this.ready) this.setAnchor(pos, wall);
   }
 
-  /** Точное время из медиа-элемента: якорь ставится по нему на каждом опросе. */
+  /** Exact time from the media element: the anchor is set from it on every poll. */
   updateExact(pos: number, playing: boolean, wall: number): ClockEvent {
     if (!this.ready) {
       this.ready = true;
@@ -91,12 +91,12 @@ export class PlaybackClock {
       return playing ? 'play' : 'pause';
     }
     const jump = Math.abs(pos - this.now(wall)) > 1.0;
-    // В историю пишем не чаще раза в 250 мс (и при скачках), чтобы она покрывала длинные окна.
+    // Write to the history at most every 250 ms (and on jumps) so it covers long windows.
     if (jump || (playing && wall - this.anchor.wall >= 250) || (!playing && pos !== this.anchor.pos)) this.setAnchor(pos, wall);
     return jump ? 'seek' : 'none';
   }
 
-  /** Позиция трека в момент wall (мс, Date.now) по истории якорей; null, если истории нет. */
+  /** Track position at moment wall (ms, Date.now) from the anchor history; null if there is no history. */
   positionAt(wall: number): number | null {
     let found: Anchor | null = null;
     for (let i = this.history.length - 1; i >= 0; i--) {
@@ -106,8 +106,8 @@ export class PlaybackClock {
       }
     }
     if (!found) {
-      // Момент чуть раньше первой отметки (кусок звука пришёл раньше первого сообщения о времени):
-      // отсчитываем назад от первой отметки, если до неё не больше 2 секунд.
+      // A moment slightly before the first anchor (an audio chunk arrived before the first time report):
+      // count back from the first anchor if it is no more than 2 seconds away.
       const first = this.history[0];
       if (!first || first.wall - wall > 2000) return null;
       return first.playing ? Math.max(0, first.pos - ((first.wall - wall) / 1000) * first.rate) : first.pos;

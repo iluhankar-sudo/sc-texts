@@ -1,7 +1,7 @@
 /**
- * Разбор результатов AudioShake (модель alignment): строки и слова с таймингами.
- * Точная схема JSON в документации не описана, поэтому разбор «терпимый»: ищем в ответе
- * массивы объектов с текстом и временем начала/конца. Запасной вариант — SRT (документирован).
+ * Parsing AudioShake results (the alignment model): lines and words with timings.
+ * The exact JSON schema is not documented, so parsing is "tolerant": we look in the reply for
+ * arrays of objects with text and start/end times. Fallback: SRT (documented).
  */
 import type { RawSegment, TranscribeResponse, Word } from './types.ts';
 
@@ -22,7 +22,7 @@ function pick(o: Record<string, unknown>, keys: string[]): unknown {
   return undefined;
 }
 
-/** «00:01:02.500» / «62.5» / 62500 (мс) → секунды. */
+/** "00:01:02.500" / "62.5" / 62500 (ms) → seconds. */
 function toSec(v: unknown, msHint: boolean): number | null {
   if (typeof v === 'number' && Number.isFinite(v)) return msHint ? v / 1000 : v;
   if (typeof v === 'string') {
@@ -52,7 +52,7 @@ function asTimed(o: unknown, msKeys: boolean): Timed | null {
   return { text: t, start, end: end ?? start, children: children?.length ? children : undefined };
 }
 
-/** Ищет самый «богатый» массив объектов со временем (строки или слова). */
+/** Finds the "richest" array of timed objects (lines or words). */
 function findTimedArrays(node: unknown, out: Timed[][], msKeys: boolean, depth = 0) {
   if (depth > 6 || !node || typeof node !== 'object') return;
   if (Array.isArray(node)) {
@@ -64,7 +64,7 @@ function findTimedArrays(node: unknown, out: Timed[][], msKeys: boolean, depth =
   for (const v of Object.values(node as Record<string, unknown>)) findTimedArrays(v, out, msKeys, depth + 1);
 }
 
-/** Слова без строк → строки по паузам и знакам конца фразы. */
+/** Words without lines → lines split by pauses and sentence-ending punctuation. */
 function groupWords(words: Word[]): RawSegment[] {
   const segs: RawSegment[] = [];
   let cur: Word[] = [];
@@ -83,7 +83,7 @@ function groupWords(words: Word[]): RawSegment[] {
 }
 
 export function fromAudioShakeJson(json: unknown, durationSec?: number): TranscribeResponse | null {
-  // Время в миллисекундах? Если явно не помечено — догадываемся по величине.
+  // Times in milliseconds? If not marked explicitly, guess by magnitude.
   const probe: Timed[][] = [];
   findTimedArrays(json, probe, false);
   if (!probe.length) return null;
@@ -92,7 +92,7 @@ export function fromAudioShakeJson(json: unknown, durationSec?: number): Transcr
   const arrays: Timed[][] = [];
   findTimedArrays(json, arrays, ms);
   if (!arrays.length) return null;
-  // Строки — массив, элементы которого содержат слова; иначе — самый длинный массив (слова или строки).
+  // Lines are an array whose items contain words; otherwise the longest array (words or lines).
   const withChildren = arrays.find((a) => a.some((x) => x.children?.length));
   let segments: RawSegment[];
   if (withChildren) {
@@ -116,7 +116,7 @@ export function fromAudioShakeJson(json: unknown, durationSec?: number): Transcr
   return { language: '', language_probability: 1, duration: segments[segments.length - 1]!.end, segments };
 }
 
-/** SRT → строки (тайминги строк, без слов). */
+/** SRT → lines (line timings, no words). */
 export function fromSrt(srt: string): TranscribeResponse | null {
   const segments: RawSegment[] = [];
   for (const block of srt.replace(/\r/g, '').split(/\n\s*\n/)) {

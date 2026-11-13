@@ -1,92 +1,55 @@
 ---
-description: Контекст и правила проекта SoundCloud AI Lyrics (Chrome MV3 + FastAPI/Whisper)
+description: Context and rules for the sc texts project (Chrome MV3 extension + Groq/Whisper, Cloudflare proxy)
 alwaysApply: true
 ---
 
-# SoundCloud AI Lyrics
+# sc texts
 
-Chrome-расширение (Manifest V3, TypeScript, React) показывает субтитры играющего трека SoundCloud
-почти в реальном времени (ru/en). Звук вкладки режется на окна, распознаётся локальным
-бэкендом FastAPI + faster-whisper, строки синхронизируются с позицией плеера.
+A Chrome extension (Manifest V3, TypeScript) that shows lyrics for SoundCloud tracks: ready-made lyrics from public databases, or recognition of the track's audio with Whisper, with karaoke, translation, pinning, editing and click-to-seek.
 
-## Структура
+## Structure
 
-- `backend/app/main.py` — `/health`, `/transcribe` (multipart: `file`, `language` ru|en|пусто, `offset`).
-  Возвращает `segments[]` со словами и таймкодами. Временный файл удаляется сразу после распознавания.
-- `backend/prototype_cli.py`, `backend/static/upload.html` — прототип распознавания файла.
-- `extension/src/background.ts` — service worker: клик по иконке → `tabCapture.getMediaStreamId` →
-  offscreen document; пересылка сообщений между вкладкой и offscreen.
-- `extension/src/offscreen.ts` — захват, возврат звука в динамики, AudioWorklet, окна с перекрытием,
-  WAV 16 кГц, POST на бэкенд, очередь (макс. 3).
-- `extension/src/content/` — `player.ts` (чтение DOM плеера), `controller.ts` (опрос 100 мс, эпохи,
-  сборка строк), `Panel.tsx` (React-панель в shadow DOM), `index.tsx`.
-- `extension/src/core/` — чистая логика без `chrome.*` и DOM: `clock`, `merge`, `filter`, `sync`,
-  `ranges`, `audio`, `config`, `time`, `types`.
-- `extension/tests/` — юнит-тесты на `node --test`.
-- `docs/AUDIO_RESEARCH.md` — почему захват именно через `tabCapture`.
+- `extension/src/background.ts` - service worker: capture start (`tabCapture.getMediaStreamId` → offscreen document), link queue, lyrics lookup, messaging.
+- `extension/src/offscreen.ts` - capture, resampling, overlapping chunks, WAV, transcription requests, final pass.
+- `extension/src/content/` - `player.ts` (SoundCloud player DOM), `controller.ts` (recognition state, epochs, line building), `page-capture.ts`, `index.tsx`.
+- `extension/src/core/` - pure logic without `chrome.*` and DOM: clock, merge, filter, align, chorus, correct, lyrics, i18n, config, types.
+- `extension/tests/` - unit tests with `node --test`.
+- `proxy/` - Cloudflare Worker that forwards requests to Groq with the owner's key.
+- `backend/` - optional local FastAPI + faster-whisper server (prototype).
+- `docs/AUDIO_RESEARCH.md` - why capture goes through `tabCapture`.
 
-## Жёсткие ограничения (не нарушать)
+## Hard constraints (do not break)
 
-- Звук берётся ТОЛЬКО через `chrome.tabCapture` + offscreen document (то, что вкладка и так играет).
-  Не добавлять скачивание стрима, запросы к внутренним HLS/API-URL SoundCloud, расшифровку сегментов
-  или обход защиты. Условия SoundCloud это запрещают.
-- Аудио и тексты не сохранять и не отправлять никуда, кроме бэкенда пользователя (по умолчанию localhost).
-- Захват запускается только по жесту пользователя (клик по иконке). Автозапуск невозможен.
-- Не использовать `HTMLMediaElement.captureStream()` для SoundCloud (MSE/HLS, ненадёжно).
+- Audio is taken ONLY from what the tab is already playing (`chrome.tabCapture` or the current-tab sharing prompt). Do not add stream downloading, requests to SoundCloud's internal HLS/API URLs, segment decryption or protection bypassing. SoundCloud's terms forbid it.
+- Audio is sent only for recognition and is never stored.
+- Capture starts only on a user gesture.
+- Do not use `HTMLMediaElement.captureStream()` for SoundCloud (MSE/HLS, unreliable).
 
-## Архитектурные правила
+## Architecture rules
 
-- Селекторы DOM SoundCloud живут ТОЛЬКО в `content/player.ts` (объект `SELECTORS`, у каждого запасной
-  вариант). Они не документированы и ломаются; правки вносить там.
-- Всё, что можно, пишем в `core/` как чистые функции и покрываем тестами. В `core/` нельзя
-  импортировать `chrome`, `document`, React.
-- Состояние service worker не хранить в памяти (он засыпает): использовать `chrome.storage.session`.
-- Offscreen document создаётся с причиной `USER_MEDIA`; захваченный поток обязательно подключать
-  обратно к `AudioContext.destination`, иначе вкладка замолчит.
-- Время окна фиксируется `Date.now()` в offscreen, позиция трека вычисляется в content script через
-  `PlaybackClock.positionAt(wall)`. Не полагаться на время ответа бэкенда.
-- Эпохи: перемотка и смена трека инвалидируют прежние результаты; пауза и возобновление — нет.
-- Слияние окон: заменяется только «доверенная» середина окна (`mergeChunk`, край = overlap/2).
-- Задержка неизбежна (длина окна + распознавание). Не обещать нулевую задержку.
+- SoundCloud DOM selectors live ONLY in `content/player.ts` (`SELECTORS`, each with a fallback). They are undocumented and break; fix them there.
+- Put as much as possible into `core/` as pure functions covered by tests. `core/` must not import `chrome`, `document` or React.
+- Do not keep service worker state in memory (it sleeps): use `chrome.storage.session`.
+- The offscreen document is created with the `USER_MEDIA` reason; route the captured stream back to `AudioContext.destination` when sound is wanted.
+- Chunk time is stamped with `Date.now()` at capture; the track position is computed in the content script via `PlaybackClock.positionAt(wall)`. Do not rely on response time.
+- Window merging replaces only the trusted middle of a window (`mergeChunk`, edge = overlap/2).
 
-## Стиль кода
+## Code style
 
-- TypeScript strict, `noUncheckedIndexedAccess`; импорты с расширением `.ts`/`.tsx`
-  (`allowImportingTsExtensions`); только стираемые типы (`erasableSyntaxOnly`: без enum и namespace).
-- Сборка esbuild (`extension/build.mjs`, формат iife для каждой точки входа), React 19.
-- Python 3.10+, FastAPI, аннотации типов; тесты API подменяют `run_transcription` заглушкой,
-  модель в тестах не грузить.
-- Комментарии и UI-тексты на русском, идентификаторы на английском.
+- TypeScript strict, `noUncheckedIndexedAccess`; imports with `.ts`/`.tsx` extensions; only erasable types (no enum or namespace).
+- esbuild build (`extension/build.mjs`).
+- Comments and identifiers in English. UI strings are localized in `core/i18n.ts` and `public/_locales`.
 
-## Команды
+## Commands
 
 ```bash
-# бэкенд
-cd backend && python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --host 127.0.0.1 --port 8000
-pytest
-
-# расширение
 cd extension && npm install
-npm run build        # → extension/dist, загрузить как распакованное в chrome://extensions
-npm run typecheck
+npm run build        # → extension/dist, load unpacked in chrome://extensions
 npm test
+node --test proxy/test/proxy.test.js
 ```
 
-Переменные бэкенда: `WHISPER_MODEL` (small), `WHISPER_DEVICE` (auto), `WHISPER_COMPUTE` (int8),
-`MAX_UPLOAD_MB` (25).
+## When changing things
 
-## Статус и известные риски
-
-- Код написан без запуска сборки и браузера: сначала выполнить `npm install`, `npm run typecheck`,
-  `npm run build` и исправить возможные ошибки типов (особенно `@types/chrome`, `chrome.offscreen.Reason`).
-- Селекторы плеера SoundCloud не сверены с живой страницей.
-- На слабом CPU `small` не успевает за реальным временем: использовать `base` или GPU.
-- Whisper «галлюцинирует» на музыке; фильтр в `core/filter.ts` ловит не всё.
-
-## Что делать при изменениях
-
-- Менял `core/` — добавь или обнови тест в `extension/tests/`, запусти `npm test`.
-- Менял API бэкенда — обнови `backend/tests/test_api.py` и `README.md`.
-- Менял поведение захвата или юридически значимое — обнови `docs/AUDIO_RESEARCH.md`.
+- Changed `core/` - add or update a test in `extension/tests/` and run `npm test`.
+- Changed capture behaviour or anything legally relevant - update `docs/AUDIO_RESEARCH.md`.

@@ -22,7 +22,7 @@ interface CloudResponse {
   words?: CloudWord[];
 }
 
-/** Приводит ответ OpenAI-совместимого API (verbose_json) к формату нашего бэкенда. */
+/** Converts an OpenAI-compatible API reply (verbose_json) into our backend's format. */
 export function fromCloud(j: CloudResponse): TranscribeResponse {
   const words: Word[] = (j.words ?? [])
     .filter((w) => typeof w.word === 'string' && typeof w.start === 'number' && typeof w.end === 'number')
@@ -65,7 +65,7 @@ interface ElevenResponse {
   words?: ElevenWord[];
 }
 
-/** Ответ ElevenLabs Scribe (слова с таймкодами) → сегменты-строки. */
+/** ElevenLabs Scribe reply (words with timestamps) → line segments. */
 export function fromElevenLabs(j: ElevenResponse): TranscribeResponse {
   const words: Word[] = (j.words ?? [])
     .filter((w) => w.type === 'word' && typeof w.start === 'number' && typeof w.end === 'number' && (w.text ?? '').trim())
@@ -90,7 +90,7 @@ export function fromElevenLabs(j: ElevenResponse): TranscribeResponse {
   };
   for (const w of words) {
     const prev = cur[cur.length - 1];
-    // Новая строка: пауза, конец фразы или слишком длинная строка.
+    // New line: a pause, end of a sentence or a line that's too long.
     if (prev && (w.start - prev.end > 0.7 || /[.!?…]$/.test(prev.word) || cur.length >= 10)) flush();
     cur.push(w);
   }
@@ -103,15 +103,15 @@ export function fromElevenLabs(j: ElevenResponse): TranscribeResponse {
   };
 }
 
-/** Подсказка модели: название и исполнитель трека помогают с именами и сленгом. */
+/** Prompt for the model: the track title and artist help with names and slang. */
 export function buildPrompt(
   hint: { title?: string | null; artist?: string | null } | null,
   lang: string,
   opts: VocabOptions = {},
 ): string {
-  // Раньше подсказка была фразой «Текст песни «Название» — Исполнитель.», и Whisper иногда
-  // вставлял её прямо в текст. Теперь исполнитель и название — просто слова в общем списке
-  // через запятую (такой список, если модель его повторит, отсеивает фильтр isPromptEcho).
+  // The prompt used to be a sentence like "Lyrics of 'Title' - Artist." and Whisper sometimes
+  // inserted it right into the lyrics. Now the artist and title are just words in a common
+  // comma-separated list (if the model repeats such a list, the isPromptEcho filter drops it).
   const who = [hint?.artist?.trim(), hint?.title?.trim()].filter((x): x is string => !!x && x.length <= 80);
   const custom = [...who, opts.custom ?? ''].filter(Boolean).join(', ');
   return vocabPrompt(lang, { ...opts, custom });
@@ -125,7 +125,7 @@ export function normLang(l: string | null | undefined): string {
   return LANG_NAMES[v] ?? v.split(/[-_]/)[0] ?? '';
 }
 
-/** Насколько модель уверена в результате (средняя лог-вероятность, взвешенная по длительности). */
+/** How confident the model is in the result (mean log-probability weighted by duration). */
 export function confidence(r: TranscribeResponse): number {
   let sum = 0;
   let dur = 0;
@@ -136,12 +136,12 @@ export function confidence(r: TranscribeResponse): number {
     dur += d;
   }
   if (dur > 0) return sum / dur;
-  // Нет оценок (ElevenLabs): ориентируемся на вероятности слов.
+  // No scores (ElevenLabs): rely on word probabilities.
   const probs = r.segments.flatMap((s) => s.words.map((w) => w.prob));
   return probs.length ? probs.reduce((a, b) => a + Math.log(Math.max(1e-6, b)), 0) / probs.length : -Infinity;
 }
 
-/** Из двух вариантов (с русским и с английским) — тот, в котором модель увереннее. */
+/** Of two variants (Russian and English), the one the model is more confident in. */
 export function pickByConfidence(a: { lang: string; res: TranscribeResponse }, b: { lang: string; res: TranscribeResponse }) {
   return confidence(b.res) > confidence(a.res) ? b : a;
 }

@@ -1,8 +1,8 @@
 /**
- * Offscreen-документ: получает аудиопоток вкладки, возвращает звук в динамики,
- * режет поток на окна с перекрытием, кодирует в WAV 16 кГц и отправляет на бэкенд.
- * Время окна фиксируется настенными часами (Date.now): content script по ним
- * вычисляет позицию трека (см. core/clock.ts).
+ * Offscreen document: receives the tab's audio stream, routes the sound back to the speakers,
+ * cuts the stream into overlapping windows, encodes them as 16 kHz WAV and sends them for recognition.
+ * A window's time is stamped with the wall clock (Date.now): from it the content script
+ * computes the track position (see core/clock.ts).
  */
 import { concatFloat32, encodeWav, firstNonSilent, toAsrPcm, toMono16k } from './core/audio.ts';
 import { windowFor } from './core/speed.ts';
@@ -20,11 +20,11 @@ interface PendingChunk {
   last: boolean;
   wav: ArrayBuffer;
   hint: { title?: string | null; artist?: string | null } | null;
-  /** Финальный проход: весь непрерывный кусок трека одним запросом. */
+  /** Final pass: a whole continuous piece of the track in one request. */
   final?: boolean;
 }
 
-/** Непрерывно записанный кусок трека (обычно — весь трек) для финального прохода. */
+/** A continuously recorded piece of the track (usually the whole track) for the final pass. */
 interface Take {
   epoch: number;
   startWall: number;
@@ -32,25 +32,25 @@ interface Take {
   samples: Float32Array;
 }
 
-/** Финальный проход не делаем для очень длинных записей (лимит размера файла у API). */
+/** No final pass for very long recordings (the API's file size limit). */
 const MAX_FINAL_SEC = 600;
 
-/** Куски не выбрасываются: трек конечен, а потеря куска — это пропавший кусок текста. Предел — только от зависания. */
+/** Chunks are never dropped: the track is finite, and a lost chunk is a missing piece of lyrics. The limit only guards against hangs.
 const MAX_QUEUE = 60;
 
 let audioCtx: AudioContext | null = null;
-/** Частота дискретизации источника звука (захват вкладки или скрытый плеер). */
+/** Sample rate of the audio source (tab capture or the page). */
 let srcRate = 48000;
-/** Источник звука подключён (захват вкладки или скрытый плеер). */
+/** The audio source is connected (tab capture or the page). */
 let live = false;
 let stream: MediaStream | null = null;
 let node: AudioWorkletNode | null = null;
 let cfg: Config | null = null;
-/** Во сколько раз ускорен трек: звук захвата растягивается обратно перед распознаванием. */
+/** How many times the track is sped up: captured audio is stretched back before recognition. */
 let speed = 1;
-/** Язык песни, закреплённый по первому куску (в режиме «Авто»), чтобы модель не прыгала между языками. */
+/** Song language locked from the first chunk (in "Auto" mode), so the model doesn't jump between languages. */
 let lockedLang: string | null = null;
-/** Новая эпоха началась до старта трека: тишину в начале отбрасываем, окно начинается с первого звука. */
+/** A new epoch started before the track did: drop the leading silence, the window starts at the first sound. */
 let trimLead = false;
 
 let epoch = 0;
@@ -61,7 +61,7 @@ let blocks: Float32Array[] = [];
 let buffered = 0;
 let bufferStartWall = 0;
 
-// Текущий непрерывный дубль и готовые дубли для финального прохода.
+// The current continuous take and finished takes for the final pass.
 let takeBlocks: Float32Array[] = [];
 let takeLen = 0;
 let takeStartWall = 0;
@@ -106,7 +106,7 @@ async function start(streamId: string | null, config: Config, monitor: boolean, 
   firstInEpoch = true;
 
   if (!streamId) {
-    // Звук присылает страница (порт sctexts-pcm) — своего захвата нет.
+    // The page sends the audio (the sctexts-pcm port) - no capture of our own.
     live = true;
     send({ type: 'STATUS', state: 'listening' });
     return;
@@ -124,10 +124,10 @@ async function start(streamId: string | null, config: Config, monitor: boolean, 
   node = new AudioWorkletNode(audioCtx, 'pcm-capture');
   node.port.onmessage = (e: MessageEvent<Float32Array>) => onBlock(e.data);
 
-  // Захват вкладки глушит её звук. В обычном режиме возвращаем звук в динамики,
-  // в режиме ссылки (monitor=false) трек слушается беззвучно.
+  // Tab capture mutes the tab. In normal mode the sound is routed back to the speakers,
+  // in link mode (monitor=false) the track is listened to silently.
   if (monitor) source.connect(audioCtx.destination);
-  // Worklet должен быть подключён к выходу, иначе браузер может не вызывать process().
+  // The worklet must be connected to the output, otherwise the browser may not call process().
   const silent = audioCtx.createGain();
   silent.gain.value = 0;
   source.connect(node);
@@ -142,12 +142,12 @@ function onBlock(input: Float32Array, wallEnd = Date.now()) {
   let block = input;
   if (trimLead) {
     const i = firstNonSilent(block);
-    if (i < 0) return; // трек ещё не заиграл
+    if (i < 0) return; // the track hasn't started yet
     if (i > 0) block = block.subarray(i);
     trimLead = false;
   }
   const sr = srcRate;
-  const eff = sr / speed; // частота дискретизации «в секундах трека»
+  const eff = sr / speed; // sample rate "in track seconds"
   if (buffered === 0) bufferStartWall = wallEnd - (block.length / sr) * 1000;
   if (takeLen === 0) {
     takeStartWall = wallEnd - (block.length / sr) * 1000;
@@ -164,8 +164,8 @@ function onBlock(input: Float32Array, wallEnd = Date.now()) {
 function emitWindow(last: boolean) {
   if (!live || !cfg) return;
   const sr = srcRate;
-  // Трек играл в speed раз быстрее без сохранения высоты тона: если считать, что сэмплы
-  // записаны с частотой sr/speed, получается исходный звук с нормальной скоростью и тоном.
+  // The track played speed times faster without preserving pitch: if we treat the samples
+  // as recorded at sr/speed, we get the original audio at normal speed and pitch.
   const eff = sr / speed;
   const all = concatFloat32(blocks, buffered);
   enqueue({
@@ -198,7 +198,7 @@ function handleReset(m: {
   trimLead?: boolean;
 }) {
   if (live && cfg && m.flush && !paused) {
-    // Пауза: дораспознать накопленный хвост (если в нём есть новый звук) под старой эпохой.
+    // Pause: finish recognizing the accumulated tail (if it has new audio) under the old epoch.
     const eff = srcRate / speed;
     const keep = firstInEpoch ? 0 : Math.round(cfg.overlapSec * eff);
     if (buffered - keep >= 1.5 * eff) emitWindow(true);
@@ -209,13 +209,13 @@ function handleReset(m: {
   epoch = m.epoch;
   paused = m.paused;
   if (m.hint) hint = m.hint;
-  // Скорость новой эпохи (накопленный хвост выше уже отправлен со старой).
+  // The new epoch's speed (the accumulated tail above was already sent with the old one).
   if (typeof m.speed === 'number' && m.speed > 0) speed = m.speed;
   trimLead = !!m.trimLead;
   firstInEpoch = true;
 }
 
-/** Закрывает текущий непрерывный дубль (пауза, перемотка, конец трека). */
+/** Closes the current continuous take (pause, seek, end of track). */
 function closeTake() {
   if (!live || takeLen === 0) return;
   const eff = srcRate / takeSpeed;
@@ -227,8 +227,8 @@ function closeTake() {
 }
 
 /**
- * Финальный проход: каждый непрерывный дубль (обычно весь трек) распознаётся одним запросом —
- * с полным контекстом песни это заметно точнее, чем кусками по 40 секунд.
+ * Final pass: each continuous take (usually the whole track) is recognized in one request -
+ * with the full song context this is noticeably more accurate than 40-second chunks.
  */
 function finalPass() {
   closeTake();
@@ -242,9 +242,9 @@ function finalPass() {
 }
 
 /**
- * Финальный проход Whisper: весь записанный трек одним запросом, сразу и параллельно с
- * предварительными кусками (раньше он ждал в общей очереди, пока они распознаются).
- * Модель — самая точная (large-v3), даже если для предварительных кусков выбрана turbo.
+ * Whisper final pass: the whole recorded track in one request, right away and in parallel with
+ * the preview chunks (it used to wait in the shared queue until they were recognized).
+ * The model is the most accurate one (large-v3), even if turbo is chosen for the preview chunks.
  */
 async function whisperFinal(list: Take[]) {
   try {
@@ -278,14 +278,14 @@ async function whisperFinal(list: Take[]) {
 const AS_API = 'https://api.audioshake.ai';
 const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Финальный проход через AudioShake; при ошибке — обычный финальный проход Whisper. */
+/** Final pass via AudioShake; on error, the usual Whisper final pass. */
 let asPending = 0;
 async function audioshakePass(list: Take[]) {
   const failed: Take[] = [];
-  const todo = list.filter((tk) => tk.samples.length / tk.eff <= 45 * 60); // лимит AudioShake — 45 минут
+  const todo = list.filter((tk) => tk.samples.length / tk.eff <= 45 * 60); // AudioShake's limit is 45 minutes
   asPending++;
   try {
-    // Дубли (если трек прерывался) отправляются параллельно — каждый ждать по очереди долго.
+    // Takes (if the track was interrupted) are sent in parallel - waiting for each in turn takes too long.
     await Promise.all(
       todo.map(async (tk) => {
         const sec = tk.samples.length / tk.eff;
@@ -307,7 +307,7 @@ async function audioshakePass(list: Take[]) {
 
 async function audioshakeTake(tk: Take): Promise<TranscribeResponse> {
   const key = cfg!.audioshakeKey;
-  // Повыше качество, чем для Whisper (AudioShake советует несжатый звук), но без «досочинённых» частот.
+  // Higher quality than for Whisper (AudioShake recommends uncompressed audio), but without "invented" frequencies.
   const rate = Math.max(16000, Math.min(32000, Math.round(tk.eff)));
   const wav = encodeWav(toMono16k(tk.samples, tk.eff, rate), rate);
   const form = new FormData();
@@ -329,7 +329,7 @@ async function audioshakeTake(tk: Take): Promise<TranscribeResponse> {
   const task = (await tr.json()) as { id?: string };
   if (!task.id) throw new Error('task: no id');
 
-  // Ждём результат: опрос раз в 5 секунд (как в документации), не дольше ~4 минут.
+  // Wait for the result: poll every 5 seconds (as in the docs), for no longer than ~4 minutes.
   type Out = { link?: string; format?: string; name?: string };
   type Target = { model?: string; status?: string; output?: Out[]; error?: unknown };
   let outputs: Out[] | null = null;
@@ -372,7 +372,7 @@ async function audioshakeTake(tk: Take): Promise<TranscribeResponse> {
 
 function enqueue(c: PendingChunk) {
   queue.push(c);
-  // При перегрузке выбрасываем самые старые обычные куски (финальный проход не трогаем).
+  // On overload, drop the oldest regular chunks (the final pass is never touched).
   while (queue.filter((q) => !q.final).length > MAX_QUEUE) {
     queue.splice(queue.findIndex((q) => !q.final), 1);
     send({ type: 'STATUS', state: 'lagging' });
@@ -410,7 +410,7 @@ async function pump() {
   }
 }
 
-/** Временные сбои (лимит запросов, ошибка сервера, обрыв сети) — до 4 попыток с паузой. */
+/** Transient failures (rate limit, server error, network drop) - up to 4 attempts with a pause. */
 async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   for (let i = 0; ; i++) {
     try {
@@ -427,9 +427,9 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Распознаёт кусок. Язык: из настроек, иначе закреплённый. Пока не закреплён — модель определяет его
- * сама; если она решила, что это не русский и не английский (на музыке так бывает), кусок
- * распознаётся с обоими языками и берётся вариант, в котором модель увереннее.
+ * Recognizes a chunk. Language: from settings, otherwise the locked one. Until locked, the model detects it
+ * itself; if it decided it's neither Russian nor English (it happens on music), the chunk
+ * is recognized with both languages and the variant the model is more confident in wins.
  */
 async function transcribe(c: PendingChunk): Promise<TranscribeResponse> {
   const fixed = cfg!.language !== 'auto' ? cfg!.language : lockedLang;
@@ -438,10 +438,10 @@ async function transcribe(c: PendingChunk): Promise<TranscribeResponse> {
   const words = res.segments.reduce((n, s) => n + s.text.split(/\s+/).filter(Boolean).length, 0);
   const detected = normLang(res.language);
   if (detected === 'ru' || detected === 'en') {
-    if (words >= 4) lockedLang = detected; // по паре слов язык не закрепляем
+    if (words >= 4) lockedLang = detected; // don't lock the language on a couple of words
     return res;
   }
-  if (words === 0) return res; // проигрыш — решим по следующему куску
+  if (words === 0) return res; // instrumental - decide on the next chunk
   const [ru, en] = await Promise.all([transcribeOnce(c, 'ru'), transcribeOnce(c, 'en')]);
   const best = pickByConfidence({ lang: 'ru', res: ru }, { lang: 'en', res: en });
   lockedLang = best.lang;
@@ -453,7 +453,7 @@ async function transcribeOnce(c: PendingChunk, lang: string): Promise<Transcribe
   form.append('file', new Blob([c.wav], { type: 'audio/wav' }), 'chunk.wav');
 
   if (cfg!.mode === 'cloud' && cfg!.apiModel.startsWith('scribe')) {
-    // ElevenLabs Scribe: слова с таймкодами, строки собираем сами.
+    // ElevenLabs Scribe: words with timestamps, we build the lines ourselves.
     if (!cfg!.elevenKey) throw new Error(t('noElevenKey'));
     form.append('model_id', cfg!.apiModel);
     form.append('timestamps_granularity', 'word');
@@ -469,15 +469,15 @@ async function transcribeOnce(c: PendingChunk, lang: string): Promise<Transcribe
   }
 
   if (cfg!.mode === 'cloud') {
-    // whisper-1 — это Whisper large-v2 у OpenAI: на песнях он ошибается реже, чем v3.
+    // whisper-1 is OpenAI's Whisper large-v2: on songs it makes fewer mistakes than v3.
     const openai = cfg!.apiModel === 'whisper-1';
-    // Groq: свой ключ — напрямую, без ключа — через сервер-посредник (если он вшит при сборке).
+    // Groq: with an own key - directly; without a key - via the proxy (if embedded at build time).
     const groq = openai ? null : groqEndpoint(cfg!);
     if (openai && !cfg!.openaiKey) throw new Error(t('noOpenaiKey'));
     if (!openai && !groq) throw new Error(t('noApiKey'));
     const apiUrl = openai ? 'https://api.openai.com/v1' : groq!.url;
     const authHeaders: Record<string, string> = openai ? { Authorization: `Bearer ${cfg!.openaiKey}` } : groq!.headers;
-    // Финальный проход у Groq — всегда самой точной моделью.
+    // Groq's final pass always uses the most accurate model.
     const model = c.final && !openai && cfg!.apiModel === 'whisper-large-v3-turbo' ? 'whisper-large-v3' : cfg!.apiModel;
     form.append('model', model);
     form.append('response_format', 'verbose_json');
@@ -525,11 +525,11 @@ chrome.runtime.onMessage.addListener((m) => {
 
 send({ type: 'OFFSCREEN_READY' });
 
-// Звук со страницы (кнопка «Начать распознавание» + разрешение в окне Chrome): PCM16 в base64.
+// Audio from the page ("Start recognition" button + Chrome's sharing prompt): PCM16 in base64.
 chrome.runtime.onConnect.addListener((p) => {
   if (p.name !== 'sctexts-pcm') return;
   p.onMessage.addListener((m: { sr: number; w: number; d: string }) => {
-    if (!live || audioCtx) return; // идёт обычный захват вкладки — этот звук не нужен
+    if (!live || audioCtx) return; // regular tab capture is running - this audio isn't needed
     srcRate = m.sr;
     const bin = atob(m.d);
     const pcm = new Int16Array(bin.length / 2);

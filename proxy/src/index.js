@@ -1,15 +1,15 @@
 /**
- * Сервер-посредник sc texts (Cloudflare Worker).
+ * sc texts proxy (Cloudflare Worker).
  *
- * Расширение без своего ключа отправляет сюда звук на распознавание и текст на перевод,
- * а посредник пересылает их в Groq со своим ключом (секрет GROQ_KEY). Ключ пользователям не виден.
+ * Without its own key, the extension sends audio for recognition and text for translation/correction here,
+ * and the proxy forwards them to Groq with its key (the GROQ_KEY secret). Users never see the key.
  *
- * Защита лимитов владельца:
- * - только нужные пути и модели (белые списки в wrangler.toml);
- * - звук не больше 25 МБ, ответ перевода не длиннее 4000 токенов;
- * - не больше LIMITER запросов в минуту с одного адреса;
- * - если задан секрет APP_TOKEN — запросы без заголовка X-SC-Texts с этим значением отклоняются
- *   (защита от случайных посетителей, не от того, кто достанет токен из расширения).
+ * Protecting the owner's limits:
+ * - only the needed paths and models (allow-lists in wrangler.toml);
+ * - audio up to 25 MB, chat replies up to 4000 tokens;
+ * - at most LIMITER requests per minute from one address;
+ * - if the APP_TOKEN secret is set, requests without an X-SC-Texts header with that value are rejected
+ *   (stops casual visitors, not someone who extracts the token from the extension).
  */
 
 const GROQ = 'https://api.groq.com/openai/v1';
@@ -66,7 +66,7 @@ async function transcribe(request, env) {
   if (!list(env.ALLOWED_TRANSCRIBE_MODELS, 'whisper-large-v3,whisper-large-v3-turbo').includes(model)) {
     return fail(400, `model not allowed: ${model}`);
   }
-  // Пересылаем только известные поля.
+  // Forward only known fields.
   const out = new FormData();
   out.append('file', file, file.name || 'audio.wav');
   for (const k of ['model', 'response_format', 'language', 'prompt', 'temperature']) {

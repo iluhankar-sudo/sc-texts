@@ -1,13 +1,13 @@
-// sc texts: скрипт в контексте страницы SoundCloud (world: MAIN).
-// 1) Ускоряет воспроизведение трека при распознавании по ссылке (без сохранения высоты тона,
-//    чтобы расширение могло точно «растянуть» звук обратно перед распознаванием).
-// 2) Отдаёт точное время воспроизведения (currentTime), а не целые секунды из плеера.
+// sc texts: script in the SoundCloud page context (world: MAIN).
+// 1) Speeds up playback during link recognition (without preserving pitch,
+//    so the extension can precisely "stretch" the audio back before recognition).
+// 2) Reports the exact playback time (currentTime) instead of whole seconds from the player.
 (() => {
   if (window.__scTextsHook) return;
   window.__scTextsHook = true;
   const media = new Set();
   let rate = 1;
-  let lastActive = null; // последний элемент, который играл (SoundCloud держит его вне страницы)
+  let lastActive = null; // the last element that played (SoundCloud keeps it outside the DOM)
 
   const apply = (m) => {
     try {
@@ -18,7 +18,7 @@
   const track = (m) => {
     if (media.has(m)) return;
     media.add(m);
-    // SoundCloud может сбрасывать скорость — возвращаем нужную.
+    // SoundCloud may reset the rate - restore the one we need.
     m.addEventListener('ratechange', () => {
       if (rate !== 1 && m.playbackRate !== rate) apply(m);
     });
@@ -32,13 +32,13 @@
   HTMLMediaElement.prototype.play = function (...args) {
     track(this);
     lastActive = this;
-    apply(this); // нужная скорость — сразу при запуске, до первого звука
+    apply(this); // the right speed right at start, before the first sound
     return origPlay.apply(this, args);
   };
 
   const current = () => {
     document.querySelectorAll('audio, video').forEach(track);
-    // Сначала то, что играет сейчас; иначе — последний игравший (даже на паузе в начале).
+    // First whatever is playing now; otherwise the last one that played (even paused at the start).
     for (const m of media) if (!m.paused) return m;
     if (lastActive && media.has(lastActive)) return lastActive;
     for (const m of media) if (m.isConnected) return m;
@@ -51,8 +51,8 @@
     media.forEach(apply);
   });
 
-  // Распознавание по ссылке: поставить трек на паузу в самом начале, затем запустить —
-  // так запись звука начинается раньше, чем трек, и первые слова не теряются.
+  // Link recognition: pause the track at the very start, then play it -
+  // so recording starts before the track and the first words are not lost.
   window.addEventListener('sctexts:control', (e) => {
     let d;
     try {

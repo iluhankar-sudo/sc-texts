@@ -1,9 +1,9 @@
 /**
- * Ручная правка распознанного текста: новые строки получают тайминги старых.
+ * Manual editing of recognized lyrics: new lines get the old lines' timings.
  *
- * Если число строк не изменилось — каждая строка сохраняет своё время (исправили слово-другое).
- * Иначе новый текст выравнивается по словам старого (у них есть время), а если совпадений мало —
- * строки раскладываются по прежнему отрезку пропорционально числу слов.
+ * If the number of lines didn't change, each line keeps its time (a word or two were fixed).
+ * Otherwise the new text is aligned to the old words (which have timings), and if there are few matches,
+ * the lines are spread over the previous span proportionally to word count.
  */
 import type { CachedLine } from './cache.ts';
 import { alignLyrics } from './align.ts';
@@ -16,7 +16,7 @@ function spreadWords(text: string, start: number, end: number, prob = 0.5): Word
   return ws.map((word, i) => ({ word, start: start + i * step, end: start + (i + 1) * step, prob }));
 }
 
-/** Текст из поля редактора → строки (пустые и пробелы по краям убираются). */
+/** Editor text → lines (empty lines and surrounding spaces are removed). */
 export function editorLines(value: string): string[] {
   return value
     .split(/\r?\n/)
@@ -31,7 +31,7 @@ export function retimeEdited(old: CachedLine[], texts: string[]): CachedLine[] {
     return texts.map((text, i) => {
       const o = old[i]!;
       if (text === o.text) return o;
-      // Слова, оставшиеся на месте, сохраняют своё время; остальные — равномерно внутри строки.
+      // Words that stayed in place keep their time; the rest are spread evenly within the line.
       const prev = o.words ?? [];
       const ws = text.split(/\s+/).filter(Boolean);
       const words =
@@ -41,7 +41,7 @@ export function retimeEdited(old: CachedLine[], texts: string[]): CachedLine[] {
   }
   const aligned = alignLyrics(texts, old, 0.25);
   if (aligned && aligned.lines.length === texts.length) return aligned.lines;
-  // Пропорционально по прежнему отрезку.
+  // Proportionally over the previous span.
   const from = old[0]!.start;
   const to = old[old.length - 1]!.end;
   const weight = texts.map((t) => Math.max(1, t.split(/\s+/).length));

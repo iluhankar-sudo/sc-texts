@@ -23,20 +23,20 @@ export const DEFAULT_CONFIG: Config = {
   customWords: '',
 };
 
-// Ключ по умолчанию подставляется при сборке (build.mjs, переменная DEFAULT_API_KEY); в исходниках его нет.
+// The default key is substituted at build time (build.mjs, the DEFAULT_API_KEY variable); it's not in the sources.
 declare const __DEFAULT_API_KEY__: string;
 const BUILT_IN_KEY = typeof __DEFAULT_API_KEY__ !== 'undefined' ? __DEFAULT_API_KEY__ : '';
 
-// Сервер-посредник (Cloudflare Worker с ключом владельца) — тоже подставляется при сборке
-// (переменные PROXY_URL и APP_TOKEN). Через него работают те, у кого нет своего ключа.
+// The proxy (a Cloudflare Worker with the owner's key) is also substituted at build time
+// (the PROXY_URL and APP_TOKEN variables). Users without their own key go through it.
 declare const __PROXY_URL__: string;
 declare const __APP_TOKEN__: string;
 export const PROXY_URL = (typeof __PROXY_URL__ !== 'undefined' ? __PROXY_URL__ : '').replace(/\/+$/, '');
 const APP_TOKEN = typeof __APP_TOKEN__ !== 'undefined' ? __APP_TOKEN__ : '';
 
 /**
- * Куда слать запросы к Groq (распознавание, запасной перевод):
- * свой ключ (в настройках или вшитый) — напрямую; иначе — через посредника; иначе — некуда (null).
+ * Where to send Groq requests (recognition, translation, correction):
+ * own key (in settings or embedded) - directly; otherwise via the proxy; otherwise nowhere (null).
  */
 export function groqEndpoint(cfg: Pick<Config, 'apiUrl' | 'apiKey'>): { url: string; headers: Record<string, string>; viaProxy: boolean } | null {
   if (cfg.apiKey) return { url: cfg.apiUrl, headers: { Authorization: `Bearer ${cfg.apiKey}` }, viaProxy: false };
@@ -52,7 +52,7 @@ function num(v: unknown, fallback: number): number {
   return fallback;
 }
 
-/** Приводит произвольные сохранённые настройки к допустимому виду. */
+/** Normalizes arbitrary saved settings into a valid shape. */
 export function normalizeConfig(raw?: Record<string, unknown> | null): Config {
   const r = raw ?? {};
   const mode: Mode = r.mode === 'local' || r.mode === 'cloud' ? (r.mode as Mode) : DEFAULT_CONFIG.mode;

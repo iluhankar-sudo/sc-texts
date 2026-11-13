@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Прототип: распознавание файла</title>
+<title>Prototype: file recognition</title>
 <style>
   body { font: 16px/1.5 system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
   .row { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
@@ -13,19 +13,19 @@
 </style>
 </head>
 <body>
-<h1>Прототип: файл → строки с таймкодами</h1>
+<h1>Prototype: file → lines with timestamps</h1>
 <div class="row">
   <input type="file" id="file" accept="audio/*">
   <select id="lang">
-    <option value="">авто</option>
-    <option value="ru">русский</option>
-    <option value="en">английский</option>
+    <option value="">auto</option>
+    <option value="ru">Russian</option>
+    <option value="en">English</option>
   </select>
   <input id="server" value="http://127.0.0.1:8000" size="24">
-  <button id="go">Распознать</button>
+  <button id="go">Transcribe</button>
 </div>
 <audio id="player" controls style="width:100%"></audio>
-<p id="status"><small>Выберите файл и нажмите «Распознать». Строки подсвечиваются в такт воспроизведению.</small></p>
+<p id="status"><small>Choose a file and press "Transcribe". Lines are highlighted in time with playback.</small></p>
 <div id="out"></div>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -34,7 +34,7 @@ $('file').onchange = () => { const f = $('file').files[0]; if (f) $('player').sr
 $('go').onclick = async () => {
   const f = $('file').files[0];
   if (!f) return;
-  $('status').textContent = 'Распознаю…';
+  $('status').textContent = 'Transcribing…';
   const fd = new FormData();
   fd.append('file', f);
   fd.append('language', $('lang').value);
@@ -43,7 +43,7 @@ $('go').onclick = async () => {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const j = await r.json();
     segs = j.segments;
-    $('status').textContent = `Язык: ${j.language} (${j.language_probability}), строк: ${segs.length}`;
+    $('status').textContent = `Language: ${j.language} (${j.language_probability}), lines: ${segs.length}`;
     $('out').replaceChildren(...segs.map((s, i) => {
       const d = document.createElement('div');
       d.textContent = `[${s.start.toFixed(1)}–${s.end.toFixed(1)}] ${s.text}`;
@@ -51,7 +51,7 @@ $('go').onclick = async () => {
       d.id = 'seg' + i;
       return d;
     }));
-  } catch (e) { $('status').textContent = 'Ошибка: ' + e.message; }
+  } catch (e) { $('status').textContent = 'Error: ' + e.message; }
 };
 $('player').ontimeupdate = () => {
   const t = $('player').currentTime;

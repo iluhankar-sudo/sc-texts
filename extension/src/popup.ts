@@ -1,8 +1,8 @@
 /**
- * Окошко под иконкой расширения.
- * Распознавание — только по ссылке: расширение открывает трек, беззвучно слушает
- * его до конца и сохраняет текст. 🎤 в шапке включает караоке: сохранённый текст
- * подсвечивается синхронно с плеером, без захвата звука и без распознавания.
+ * The popup under the extension icon.
+ * Recognition is link-based: the extension opens the track, listens to it silently
+ * to the end and saves the lyrics. Karaoke highlights saved lyrics
+ * in sync with the player, without audio capture or recognition.
  */
 import { normalizeConfig } from './core/config.ts';
 import { baseLang, detectScriptLang, langName } from './core/lang.ts';
@@ -41,7 +41,7 @@ const copyTip = $('copyTip');
 const pinBtn = $<HTMLButtonElement>('pin');
 const karaokeBtn = $<HTMLButtonElement>('karaoke');
 const karaokeTip = $('karaokeTip');
-/** Вкладка, где идёт караоке, запущенное кнопкой 🎤. */
+/** The tab where karaoke started with the 🎤 button is running. */
 let karaokeTabId: number | null = null;
 const pinTip = $('pinTip');
 const editBtn = $<HTMLButtonElement>('edit');
@@ -50,10 +50,10 @@ const editActions = $('editActions');
 let editing = false;
 const correctBtn = $<HTMLButtonElement>('correct');
 let hasDeepseek = false;
-let forceScan = false; // «Распознать по звуку»: не искать готовый текст
+let forceScan = false; // "Recognize from audio": don't look up ready lyrics
 const translateBtn = $<HTMLButtonElement>('translate');
 const translateLabel = $('translateLabel');
-let viewTexts: string[] = []; // строки, которые сейчас на экране
+let viewTexts: string[] = []; // lines currently on screen
 
 const ICON_MIC =
   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
@@ -69,18 +69,18 @@ let state: PanelState | null = null;
 let result: SavedResult | null = null;
 let monitor = false;
 let busy = false;
-let note = ''; // разовое сообщение (ошибка, «Скопировано»)
+let note = ''; // a one-off message (an error, "Copied")
 let noteIsError = false;
 let lastKey = '';
 let lastArt: string | null | undefined;
 let lastTarget = -2;
-let orphanSince: number | null = null; // запись числится, а вкладка не отвечает — с какого момента
-let basePos: number | null = null; // позиция из последнего опроса
-let baseAt = 0; // performance.now() момента опроса
+let orphanSince: number | null = null; // capture is registered but the tab doesn't answer - since when
+let basePos: number | null = null; // position from the last poll
+let baseAt = 0; // performance.now() at the time of the poll
 let karaokeLines: { start: number; end: number; words: { start: number }[] }[] = [];
 let lastOn = -2;
 
-// Перевод
+// Translation
 const target = baseLang(navigator.language);
 const targetName = langName(target, uiLang());
 let translateOn = false;
@@ -120,12 +120,12 @@ interface ViewLine {
   chorus?: boolean;
 }
 
-/** Длинные тире (— и –) в тексте песни заменяем обычным дефисом. */
+/** Long dashes (— and –) in lyrics are replaced with a plain hyphen. */
 function dashes(s: string): string {
   return s.replace(/[\u2014\u2013\u2012\u2015]/g, '-');
 }
 
-/** Можно ли перематывать трек кликом по строке (есть время строк и сейчас не идёт распознавание). */
+/** Whether the track can be seeked by clicking a line (lines have times and no recognition is running). */
 let seekable = false;
 
 function renderLines(baseKey: string, lines: ViewLine[], intro: boolean, karaoke: boolean) {
@@ -174,9 +174,9 @@ function renderLines(baseKey: string, lines: ViewLine[], intro: boolean, karaoke
 }
 
 /**
- * Прокручивает список так, чтобы строка оказалась на заданной доле высоты окна текста.
- * Положение считаем относительно самого списка: offsetTop отсчитывается от страницы
- * (вместе с шапкой), из-за чего строки уезжали слишком высоко.
+ * Scrolls the list so the line ends up at the given fraction of the lyrics area height.
+ * The position is measured relative to the list itself: offsetTop counts from the page
+ * (including the header), which made lines scroll too high.
  */
 function scrollLineTo(el: HTMLElement, frac: number) {
   const y = listEl.scrollTop + el.getBoundingClientRect().top - listEl.getBoundingClientRect().top;
@@ -184,12 +184,12 @@ function scrollLineTo(el: HTMLElement, frac: number) {
   if (Math.abs(top - listEl.scrollTop) > 2) listEl.scrollTo({ top, behavior: 'smooth' });
 }
 
-/** Караоке: подсветка текущей строки и спетых слов; вызывается каждый кадр. */
+/** Karaoke: highlighting of the current line; called every frame. */
 const KARAOKE_LEAD = 0.25;
 function karaokeFrame() {
   requestAnimationFrame(karaokeFrame);
   if (!karaokeLines.length || basePos === null || !state?.active) return;
-  // Строка загорается чуть раньше первого слова — глазу нужно мгновение, чтобы её прочитать.
+  // A line lights up slightly before its first word - the eye needs a moment to read it.
   const pos = basePos + (state.playing ? (performance.now() - baseAt) / 1000 : 0) + KARAOKE_LEAD;
   const lines = karaokeLines;
   const idx = activeIndex(lines as never, pos, 1);
@@ -209,7 +209,7 @@ function karaokeFrame() {
     const el = target >= 0 ? (listEl.children[target] as HTMLElement | undefined) : undefined;
     if (el) scrollLineTo(el, 0.32);
   }
-  // Подсвечивается вся текущая строка целиком (без слов по одному).
+  // The whole current line is highlighted at once (not word by word).
 }
 
 function setHeader(title: string, artist: string, art: string | null) {
@@ -229,7 +229,7 @@ function render() {
   const active = !!state?.active;
   const linkJob = active && state!.mode === 'link';
 
-  // Шапка
+  // Header
   if (active && (state!.title || linkJob)) {
     setHeader(state!.title ?? t('openingTrack'), state!.artist ?? '', state!.artwork);
   } else if (!active && result) {
@@ -238,7 +238,7 @@ function render() {
     setHeader('sc texts', t('tagline'), null);
   }
 
-  // Кнопка ■ в шапке: только остановка идущего задания (караоке теперь — кнопкой 🎤 внизу).
+  // The ■ button in the header only stops a running job (karaoke is now the 🎤 button at the bottom).
   toggle.hidden = !active;
   toggle.innerHTML = ICON_STOP;
   toggle.classList.toggle('on', active);
@@ -253,7 +253,7 @@ function render() {
   soundBtn.classList.toggle('on', monitor);
   soundBtn.title = monitor ? t('soundOn') : t('soundOff');
 
-  // Прогресс
+  // Progress
   const dur = state?.duration ?? null;
   progressEl.hidden = !(linkJob && dur);
   if (linkJob && dur) {
@@ -262,7 +262,7 @@ function render() {
     ptimeEl.textContent = `${fmt(pos)} / ${fmt(dur)}`;
   }
 
-  // Статус
+  // Status
   let status = note;
   if (!status && active && (linkJob || state!.lines.length > 0)) status = state!.message;
   if (!status && !active && result) {
@@ -288,17 +288,17 @@ function render() {
   statusEl.textContent = status;
   statusEl.classList.toggle('err', noteIsError || state?.status === 'error');
 
-  // Текст
+  // Lyrics
   copyBtn.hidden = active || !result || result.lines.length === 0;
-  // Закреп: текст остаётся за треком, и по этой ссылке больше не нужно искать или распознавать.
+  // Pin: the lyrics stay with the track, and this link no longer needs lookup or recognition.
   pinBtn.hidden = copyBtn.hidden || !result?.url || !parseTrackUrl(result.url)?.path;
-  // ✏️ Правка: только для текстов, распознанных расширением (свои ошибки распознавания).
+  // ✏️ Edit: only for lyrics recognized by the extension (to fix its own recognition errors).
   editBtn.hidden = pinBtn.hidden || !(!result!.source || result!.source === 'scan' || result!.alignedBy === 'audio');
   const pinned = !!result?.pinned;
   pinBtn.classList.toggle('on', pinned);
   pinTip.textContent = pinned ? t('pinnedTip') : t('pinTip');
   pinBtn.setAttribute('aria-label', pinTip.textContent);
-  // 🎤 Караоке: появляется, когда текст готов. Без таймингов — сначала синхронизация по звуку.
+  // 🎤 Karaoke: appears when the lyrics are ready. Without timings, lines get approximate timing.
   const karaokeOn = active && state!.mode === 'karaoke';
   const hasLyrics = !active && !!result?.url && result.lines.length > 0 && !!parseTrackUrl(result.url)?.path;
   karaokeBtn.hidden = !(karaokeOn || hasLyrics);
@@ -321,8 +321,8 @@ function render() {
       );
     }
     if (!linkJob) {
-      // Караоке: синхронная подсветка, позиция интерполируется в karaokeFrame().
-      // Текст без таймингов (из LRCLIB) показываем целиком, без подсветки.
+      // Karaoke: synchronized highlighting, the position is interpolated in karaokeFrame().
+      // Lyrics without timings are shown whole, without highlighting.
       const synced = state!.synced !== false;
       seekable = synced;
       renderLines(`k:${synced}:${lines.map((l) => `${l.start}|${l.text}|${l.chorus ? 1 : 0}`).join('\n')}`, lines, synced, synced);
@@ -330,7 +330,7 @@ function render() {
     }
     seekable = false;
     renderLines(`a:${lines.map((l) => `${l.start}|${l.text}|${l.chorus ? 1 : 0}`).join('\n')}`, lines, true, false);
-    // Прокрутка к последней распознанной строке
+    // Scroll to the last recognized line
     const target = lines.length;
     if (target !== lastTarget) {
       lastTarget = target;
@@ -352,7 +352,7 @@ function render() {
 }
 
 async function refresh() {
-  if (editing) return; // не мешаем правке текста
+  if (editing) return; // don't interfere with lyrics editing
   const s = await chrome.storage.session.get(['capture', 'karaoke']).catch(() => ({}) as Record<string, unknown>);
   const cap = s.capture as { tabId: number } | undefined;
   captureTabId = cap?.tabId ?? null;
@@ -362,14 +362,14 @@ async function refresh() {
   if (tabId !== undefined && tabId !== null) {
     state = (await chrome.tabs.sendMessage(tabId, { type: 'GET_STATE' }).catch(() => null)) as PanelState | null;
   }
-  // Караоке во вкладке закончилось (вкладку закрыли или остановили) — забываем её.
+  // Karaoke in the tab has ended (the tab was closed or stopped) - forget it.
   if (karaokeTabId !== null && !captureTabId && !(state?.active && state.mode === 'karaoke') && !(s.karaoke as { pending?: boolean }).pending) {
     karaokeTabId = null;
     await chrome.storage.session.remove('karaoke').catch(() => {});
     if (tabId !== activeTab?.id && activeTab?.id) state = (await chrome.tabs.sendMessage(activeTab.id, { type: 'GET_STATE' }).catch(() => null)) as PanelState | null;
   }
-  // Запись числится, но вкладка давно не отвечает (её перезагрузили, закрыли, сломалась страница) —
-  // освобождаем захват, чтобы окошко не «зависло».
+  // Capture is registered, but the tab hasn't answered for a long time (reloaded, closed, page broke) -
+  // release the capture so the popup doesn't "hang".
   if (captureTabId !== null && !state?.active) {
     orphanSince ??= Date.now();
     if (Date.now() - orphanSince > 12000) {
@@ -379,7 +379,7 @@ async function refresh() {
       setNote(t('staleReset'));
     }
   } else orphanSince = null;
-  // Пока страница по ссылке загружается, контроллера ещё нет: показываем задание как активное.
+  // While the linked page is loading there is no controller yet: show the job as active.
   if (captureTabId !== null && !state?.active) {
     state = {
       active: true, mode: 'link', status: 'listening', message: t('openingTrack'), lines: [], coverage: [],
@@ -392,7 +392,7 @@ async function refresh() {
   } else basePos = null;
   if (!state?.active) karaokeLines = [];
   result = ((await chrome.storage.local.get('lastResult')).lastResult as SavedResult | undefined) ?? null;
-  // Распознанные раньше тексты могли содержать строку с названием песни — прячем её и в них.
+  // Previously recognized lyrics may contain a line with the song title - hide it in them too.
   if (result && result.source !== 'lrclib') result = { ...result, lines: dropTitleEcho(result.lines, { title: result.title, artist: result.artist }) };
   render();
 }
@@ -400,15 +400,15 @@ async function refresh() {
 async function startLink(e: Event) {
   e.preventDefault();
   if (busy) return;
-  // Пустое поле, а на вкладке открыт трек SoundCloud → распознаём его.
+  // Empty field and a SoundCloud track open in the tab → recognize it.
   if (!urlInput.value.trim() && activeTab?.url && parseTrackUrl(activeTab.url)) urlInput.value = activeTab.url;
   let link = parseTrackUrl(urlInput.value);
   if (!link) {
     setNote(t('notALink'), true);
     return render();
   }
-  // Короткая ссылка (кнопка «Copy link» на SoundCloud) — сначала узнаём настоящий адрес трека,
-  // иначе не найти готовый текст и не отличить этот трек от другого, играющего в плеере.
+  // Short link (SoundCloud's "Copy link" button) - first find out the real track URL,
+  // otherwise we can't find ready lyrics or tell this track from another one playing in the player.
   if (!link.path) {
     const full = (await chrome.runtime.sendMessage({ type: 'RESOLVE_LINK', url: link.url }).catch(() => null)) as {
       url: string | null;
@@ -425,10 +425,10 @@ async function startLink(e: Event) {
   try {
     if (link.path && !skipLookup) {
       const store = await chrome.storage.local.get('results');
-      // Текст этого трека уже есть — показываем его без распознавания, если ему можно доверять:
-      // закреплён или исправлен вручную, либо найден готовым с таймингами (или уже сверен со звуком).
-      // Прошлое распознавание без закрепа распознаём заново (распознавание со временем улучшается),
-      // а готовый текст без таймингов сверяем со звуком — иначе караоке будет «примерным».
+      // This track's lyrics already exist - show them without recognition if they can be trusted:
+      // pinned or edited by hand, or found ready with timings (or already synced to the audio).
+      // A previous unpinned recognition is redone (recognition improves over time),
+      // and ready lyrics without timings are synced to the audio - otherwise karaoke would be "approximate".
       const saved = (store.results as Record<string, SavedResult> | undefined)?.[trackKey(link.path)];
       const trusted =
         !!saved &&
@@ -442,17 +442,17 @@ async function startLink(e: Event) {
         return await refresh();
       }
     }
-    // Сначала ищем готовый текст (LRCLIB) — сканировать звук нужно, только если его нет.
+    // Look up ready lyrics first - scanning the audio is needed only if there are none.
     if (!skipLookup && link.path) {
       setNote(t('searching'));
       render();
-      // Не ждём дольше 12 секунд (источников несколько, у самого поиска срок 8 с + название трека).
+      // Don't wait longer than 12 seconds (several sources; the lookup itself has an 8 s deadline + the track title).
       const found = (await Promise.race([
         chrome.runtime.sendMessage({ type: 'LOOKUP_LINK', url: link.url, path: link.path }).catch(() => null),
         new Promise((r) => setTimeout(() => r(null), 12000)),
       ])) as { ok?: boolean; synced?: boolean } | null;
-      // Готовый текст с таймингами — готово. Без таймингов — он станет основой, а время строк
-      // возьмём из распознавания звука (сверка в конце трека).
+      // Ready lyrics with timings - done. Without timings they become the base, and the line timings
+      // come from audio recognition (synced at the end of the track).
       if (found?.ok && found.synced) {
         urlInput.value = '';
         setNote('');
@@ -463,7 +463,7 @@ async function startLink(e: Event) {
       setNote(found?.ok ? t('refSyncScan') : t('noReadyScan'));
       render();
     }
-    // Что сейчас играет в этой вкладке?
+    // What is playing in this tab right now?
     const player = isSC(activeTab.url)
       ? ((await chrome.tabs.sendMessage(activeTab.id, { type: 'PLAYER_INFO' }).catch(() => null)) as {
           trackId: string | null;
@@ -471,12 +471,12 @@ async function startLink(e: Event) {
         } | null)
       : null;
     const sameTrack = !!player?.trackId && !!link.path && isSameTrack(player.trackId, link.path);
-    // Уже открыта страница этого трека (или он в плеере) — распознаём прямо здесь, без лишних кликов.
+    // This track's page is already open (or it's in the player) - recognize right here, without extra clicks.
     const onTrackPage = !!activeTab.url && !!link.path && parseTrackUrl(activeTab.url)?.path === link.path;
 
     if (!sameTrack && !onTrackPage) {
-      // Иначе трек открывается в отдельной вкладке и сразу включается; распознавание стартует
-      // по клику на иконку там (так требует Chrome для записи звука вкладки).
+      // Otherwise the track opens in a separate tab and starts right away; recognition starts
+      // with a click on the icon there (Chrome requires this to record the tab's audio).
       const res = await chrome.runtime.sendMessage({ type: 'QUEUE_LINK', url: link.url, path: link.path, returnTabId: activeTab.id });
       if (res && res.ok === false) setNote(res.error ?? t('cantOpenTab'), true);
       else urlInput.value = '';
@@ -484,13 +484,13 @@ async function startLink(e: Event) {
       return render();
     }
 
-    // streamId запрашивается здесь, в ответ на действие пользователя, для текущей вкладки.
+    // The streamId is requested here, in response to the user's action, for the current tab.
     let streamId: string;
     try {
       streamId = await getStreamId(activeTab.id);
     } catch (err) {
       if (!(err instanceof TabBusyError)) throw err;
-      // Вкладку уже записывает демонстрация экрана — распознаём в соседней вкладке.
+      // The tab is already being recorded by screen sharing - recognize in a neighbouring tab.
       const q = await chrome.runtime.sendMessage({ type: 'QUEUE_LINK', url: link.url, path: link.path, returnTabId: activeTab.id });
       if (q && q.ok === false) setNote(q.error ?? t('cantOpenTab'), true);
       else {
@@ -506,8 +506,8 @@ async function startLink(e: Event) {
       streamId,
       url: link.url,
       path: link.path,
-      // Даже если этот трек уже играет, распознаём быстро (с ускорением и без звука), как и по
-      // любой ссылке; со звуком и на обычной скорости — только если включена кнопка звука.
+      // Even if this track is already playing, recognize fast (sped up and muted), as with
+      // any link; with sound and at normal speed only if the sound button is on.
       monitor,
     });
     if (res && res.ok === false) setNote(res.error ?? t('cantStart'), true);
@@ -527,8 +527,8 @@ async function startLink(e: Event) {
 class TabBusyError extends Error {}
 
 /**
- * Идентификатор потока вкладки. Если вкладку держит наш прошлый захват — освобождаем и пробуем снова.
- * Если её записывает кто-то ещё (демонстрация экрана «вкладка Chrome») — TabBusyError.
+ * The tab's stream ID. If our previous capture holds the tab, release it and try again.
+ * If someone else is recording it (screen sharing of a "Chrome tab") - TabBusyError.
  */
 async function getStreamId(tabId: number): Promise<string> {
   try {
@@ -552,7 +552,7 @@ async function getStreamId(tabId: number): Promise<string> {
   }
 }
 
-/** Запуск распознавания в отдельной вкладке (окошко открыто именно в ней). */
+/** Starting recognition in a separate tab (the popup is open in that very tab). */
 async function startPending(p: { tabId: number; url: string; path: string | null; returnTabId: number | null }) {
   busy = true;
   setNote(t('startingRecognition'));
@@ -601,7 +601,7 @@ async function toggleCapture() {
 }
 
 form.addEventListener('submit', (e) => void startLink(e));
-// Исправить уже распознанный текст через DeepSeek (тайминги строк сохраняются).
+// Fix already recognized lyrics with AI (line timings are kept).
 correctBtn.addEventListener('click', async () => {
   if (!result || busy) return;
   busy = true;
@@ -652,7 +652,7 @@ karaokeBtn.addEventListener('click', async () => {
 pinBtn.addEventListener('click', async () => {
   const path = result?.url ? parseTrackUrl(result.url)?.path : null;
   if (!path) return;
-  // Берём сохранённый результат целиком (в окошке он мог быть подчищен для показа).
+  // Take the whole saved result (the popup may have trimmed it for display).
   const store = await chrome.storage.local.get(['results', 'lastResult']);
   const results = (store.results as Record<string, SavedResult> | undefined) ?? {};
   const key = trackKey(path);
@@ -707,15 +707,15 @@ copyBtn.addEventListener('click', async () => {
 async function init() {
   [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const saved = await chrome.storage.local.get(['language', 'monitor', 'translations', 'deepseekKey', 'mode']);
-  // Исправить текст можно всегда в облачном режиме (бесплатно через Groq) или со своим ключом DeepSeek.
+  // Fixing lyrics is always available in cloud mode (free via Groq) or with your own DeepSeek key.
   hasDeepseek = (typeof saved.deepseekKey === 'string' && saved.deepseekKey.trim() !== '') || (saved.mode ?? 'cloud') === 'cloud';
   translations = new Map(Object.entries((saved.translations as Record<string, string> | undefined) ?? {}));
   monitor = saved.monitor === true;
-  // Если на вкладке открыт трек SoundCloud, подставляем его ссылку.
+  // If a SoundCloud track is open in the tab, prefill its link.
   if (activeTab?.url && parseTrackUrl(activeTab.url)) urlInput.placeholder = t('linkPlaceholderThis');
   await refresh();
   urlInput.focus();
-  // Отдельная вкладка распознавания ждёт клика по иконке — это он.
+  // The separate recognition tab waits for an icon click - this is it.
   const pend = (await chrome.storage.session.get('pending')).pending as
     | { tabId: number; url: string; path: string | null; returnTabId: number | null }
     | undefined;
@@ -733,13 +733,13 @@ const isForeign = (t: string) => {
   return !!src && src !== target;
 };
 
-/** Кнопка «Перевести»: видна, когда на экране есть строки не на языке браузера. */
+/** The "Translate" button: visible when there are lines on screen not in the browser's language. */
 function renderTranslateButton() {
   const foreign = viewTexts.filter(isForeign);
   translateBtn.hidden = foreign.length === 0;
-  // Обе кнопки не помещаются с подписями — «Копировать» остаётся значком.
+  // Both buttons don't fit with labels - "Copy" stays an icon.
   copyBtn.classList.toggle('iconOnly', !translateBtn.hidden);
-  copyBtn.classList.toggle('tipbtn', !translateBtn.hidden); // без подписи — быстрая подсказка, как у соседних кнопок
+  copyBtn.classList.toggle('tipbtn', !translateBtn.hidden); // no label - a quick tooltip, like the neighbouring buttons
   if (!copyBtn.classList.contains('flash')) copyTip.textContent = t('copyText');
   if (translateBtn.hidden) return;
   const untranslated = foreign.some((x) => !translations.has(x) && !failed.has(x));
@@ -754,7 +754,7 @@ function renderTranslateButton() {
         : t('hideTranslation');
 }
 
-/** Переводит строки на экране, которых ещё нет в переводах. Вызывается только по кнопке. */
+/** Translates the on-screen lines that aren't translated yet. Called only from the button. */
 async function translateVisible() {
   if (trBusy) return;
   const missing = [...new Set(viewTexts)].filter((x) => isForeign(x) && !translations.has(x));
@@ -770,7 +770,7 @@ async function translateVisible() {
     });
     for (const [k, v] of res) translations.set(k, v);
     missing.forEach((x) => failed.delete(x));
-    // Храним последние 3000 переводов.
+    // Keep the last 3000 translations.
     const entries = [...translations.entries()].slice(-3000);
     translations = new Map(entries);
     await chrome.storage.local.set({ translations: Object.fromEntries(entries) });
@@ -787,7 +787,7 @@ async function translateVisible() {
 translateBtn.addEventListener('click', () => {
   const untranslated = viewTexts.some((x) => isForeign(x) && !translations.has(x));
   if (translateOn && !untranslated) {
-    translateOn = false; // «Скрыть перевод»
+    translateOn = false; // "Hide translation"
     trStatus = '';
     render();
     return;
@@ -795,13 +795,13 @@ translateBtn.addEventListener('click', () => {
   translateOn = true;
   failed.clear();
   render();
-  // Запуск прямо в обработчике клика: встроенному переводчику Chrome можно скачать модель.
+  // Run right in the click handler: Chrome's built-in translator may download a model.
   void translateVisible();
 });
 
 void init();
 
-// ---------------- Правка текста вручную ----------------
+// ---------------- Manual lyrics editing ----------------
 
 async function storedResult(): Promise<{ results: Record<string, SavedResult>; key: string; base: SavedResult } | null> {
   const path = result?.url ? parseTrackUrl(result.url)?.path : null;
@@ -824,7 +824,7 @@ function setEditing(on: boolean) {
 editBtn.addEventListener('click', async () => {
   const s = await storedResult();
   if (!s) return;
-  // Строки с названием песни (в окошке скрыты) в редактор тоже не попадают.
+  // Lines with the song title (hidden in the popup) don't go into the editor either.
   const lines = s.base.source === 'lrclib' ? s.base.lines : dropTitleEcho(s.base.lines, { title: s.base.title, artist: s.base.artist });
   editorEl.value = lines.map((l) => dashes(l.text)).join('\n');
   setEditing(true);
@@ -848,7 +848,7 @@ $('editSave').addEventListener('click', async () => {
   const s = await storedResult();
   if (!s) return setEditing(false);
   const old = s.base.source === 'lrclib' ? s.base.lines : dropTitleEcho(s.base.lines, { title: s.base.title, artist: s.base.artist });
-  // Закрепляем, чтобы исправленный текст не перезаписало новое распознавание.
+  // Pin it so new recognition doesn't overwrite the edited lyrics.
   const saved: SavedResult = { ...s.base, lines: retimeEdited(old, texts), edited: true, pinned: true };
   s.results[s.key] = saved;
   await chrome.storage.local.set({ results: pruneCache(s.results), lastResult: saved });
@@ -862,11 +862,11 @@ editorEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) (document.getElementById('editSave') as HTMLButtonElement).click();
 });
 
-// ---------------- Перемотка кликом по строке ----------------
+// ---------------- Click a line to seek ----------------
 listEl.addEventListener('click', async (e) => {
   if (!seekable || editing) return;
   const el = (e.target as HTMLElement).closest<HTMLElement>('.line[data-t]');
-  if (!el || window.getSelection()?.toString()) return; // выделяли текст — не перематываем
+  if (!el || window.getSelection()?.toString()) return; // text was being selected - don't seek
   const time = Number(el.dataset.t);
   if (!Number.isFinite(time)) return;
   const karaokeOn = !!state?.active && state.mode === 'karaoke';

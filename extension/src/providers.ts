@@ -1,7 +1,7 @@
 /**
- * Дополнительные источники готовых текстов (фоновый скрипт): Genius, NetEase, Kugou.
- * Неофициальные адреса сайтов — для личного использования; любой из них может перестать отвечать,
- * поэтому каждый запрос с коротким тайм-аутом, а сбой источника просто пропускается.
+ * Additional ready-lyrics sources (background script): Genius, NetEase, Kugou.
+ * Unofficial site endpoints - for personal use; any of them may stop responding,
+ * so each request has a short timeout, and a failing source is simply skipped.
  */
 import {
   extractGeniusLyrics,
@@ -22,14 +22,14 @@ export interface Want {
 
 export interface ProviderHit {
   source: 'genius' | 'netease' | 'kugou';
-  /** LRC с таймингами или обычный текст. */
+  /** LRC with timings or plain text. */
   text: string;
   synced: boolean;
   title: string;
   artist: string;
 }
 
-/** Журнал: что ответил каждый источник. */
+/** Log: what each source answered. */
 export const providerLog: string[] = [];
 const note = (s: string) => providerLog.push(s);
 
@@ -56,16 +56,16 @@ export async function genius(w: Want): Promise<ProviderHit | null> {
       .sort((a, b) => b.score - a.score);
     const best = ranked[0]?.h;
     if (!best) {
-      note(`Genius: нет совпадений (${hits.length} результатов)`);
+      note(`Genius: no matches (${hits.length} results)`);
       return null;
     }
     const html = (await get(best.url, 5000, 'text')) as string;
     const text = extractGeniusLyrics(html);
     if (!text) {
-      note(`Genius: страница без текста (${best.url})`);
+      note(`Genius: page without lyrics (${best.url})`);
       return null;
     }
-    note(`Genius: найден «${best.artist} — ${best.title}»`);
+    note(`Genius: found "${best.artist} - ${best.title}"`);
     return { source: 'genius', text, synced: false, title: best.title, artist: best.artist };
   } catch (e) {
     note(`Genius: ${String(e).slice(0, 80)}`);
@@ -83,16 +83,16 @@ export async function netease(w: Want): Promise<ProviderHit | null> {
       .sort((a, b) => b.score - a.score);
     const best = ranked[0]?.s;
     if (!best) {
-      note(`NetEase: нет совпадений (${songs.length} результатов)`);
+      note(`NetEase: no matches (${songs.length} results)`);
       return null;
     }
     const lrc = neteaseLrc(await get(`https://music.163.com/api/song/lyric?id=${best.id}&lv=1&kv=1&tv=-1`, 4000));
     if (!lrc) {
-      note('NetEase: у песни нет текста');
+      note('NetEase: the song has no lyrics');
       return null;
     }
     const synced = hasTimings(lrc);
-    note(`NetEase: найден «${best.artist} — ${best.name}»${synced ? ' с таймингами' : ''}`);
+    note(`NetEase: found "${best.artist} - ${best.name}"${synced ? ', timed' : ''}`);
     return { source: 'netease', text: lrc, synced, title: best.name, artist: best.artist };
   } catch (e) {
     note(`NetEase: ${String(e).slice(0, 80)}`);
@@ -113,18 +113,18 @@ export async function kugou(w: Want): Promise<ProviderHit | null> {
       .sort((a, b) => b.score - a.score);
     const best = ranked[0]?.c;
     if (!best) {
-      note(`Kugou: нет совпадений (${cands.length} результатов)`);
+      note(`Kugou: no matches (${cands.length} results)`);
       return null;
     }
     const lrc = kugouLrc(
       await get(`http://lyrics.kugou.com/download?ver=1&client=pc&id=${best.id}&accesskey=${best.accesskey}&fmt=lrc&charset=utf8`, 4000),
     );
     if (!lrc) {
-      note('Kugou: пустой текст');
+      note('Kugou: empty lyrics');
       return null;
     }
     const synced = hasTimings(lrc);
-    note(`Kugou: найден «${best.singer} — ${best.song}»${synced ? ' с таймингами' : ''}`);
+    note(`Kugou: found "${best.singer} - ${best.song}"${synced ? ', timed' : ''}`);
     return { source: 'kugou', text: lrc, synced, title: best.song, artist: best.singer };
   } catch (e) {
     note(`Kugou: ${String(e).slice(0, 80)}`);
@@ -133,8 +133,8 @@ export async function kugou(w: Want): Promise<ProviderHit | null> {
 }
 
 /**
- * NetEase отвечает только запросам «со своего сайта» (заголовок Referer). Расширению нельзя
- * поставить его в fetch напрямую — ставим правилом declarativeNetRequest для music.163.com.
+ * NetEase only answers requests "from its own site" (the Referer header). An extension can't
+ * set it in fetch directly - so a declarativeNetRequest rule sets it for music.163.com.
  */
 export async function installHeaderRules() {
   try {

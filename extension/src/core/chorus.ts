@@ -1,10 +1,10 @@
 /**
- * Припев: повторяющиеся куски песни.
+ * Chorus: repeated sections of a song.
  *
- * Распознавание слышит припев несколько раз и каждый раз может ошибиться по-разному. Здесь мы
- * находим повторы (строки, похожие друг на друга, причём повторяется кусок из нескольких строк
- * подряд, а не одна случайная фраза), сводим все варианты в один — голосованием по словам с учётом
- * уверенности модели — и ставим исправленный текст во все повторы, сохраняя их время.
+ * Recognition hears the chorus several times and may make different mistakes each time. Here we
+ * find repeats (lines similar to each other, where a section of several consecutive lines repeats,
+ * not a single random phrase), merge all variants into one by word voting weighted by
+ * model confidence, and put the corrected text into every repeat, keeping their timings.
  */
 import type { Line } from './types.ts';
 import { levRatio, normName } from './providers.ts';
@@ -18,7 +18,7 @@ function wordSim(a: string, b: string): number {
   return levRatio(a, b);
 }
 
-/** Выравнивание слов двух строк (Нидлман — Вунш): пары индексов [i из a, j из b]. */
+/** Word alignment of two lines (Needleman-Wunsch): index pairs [i from a, j from b]. */
 function alignWords(a: string[], b: string[]): [number, number][] {
   const R = a.length;
   const C = b.length;
@@ -50,7 +50,7 @@ function alignWords(a: string[], b: string[]): [number, number][] {
   return pairs.reverse();
 }
 
-/** Похожесть строк 0…1: доля слов, нашедших похожую пару. */
+/** Line similarity 0...1: share of words that found a similar pair. */
 export function lineSim(a: string, b: string): number {
   const x = toks(a).map(norm).filter(Boolean);
   const y = toks(b).map(norm).filter(Boolean);
@@ -61,26 +61,26 @@ export function lineSim(a: string, b: string): number {
 
 export interface ChorusResult {
   lines: Line[];
-  /** Группы повторяющихся строк (индексы строк). */
+  /** Groups of repeated lines (line indices). */
   groups: number[][];
-  /** Сколько строк исправлено по другим повторам. */
+  /** How many lines were fixed using other repeats. */
   fixed: number;
 }
 
 const SIM = 0.6;
 const MIN_WORDS = 2;
 
-/** Находит повторяющиеся строки и сводит их варианты в один текст. */
+/** Finds repeated lines and merges their variants into one text. */
 export function reconcileChorus(input: Line[]): ChorusResult {
-  // Голосуем всегда по исходному распознаванию (raw), а не по уже исправленному тексту:
-  // иначе исправление прошлого шага считалось бы лишним «голосом».
+  // Always vote on the original recognition (raw), not on already corrected text:
+  // otherwise a previous step's fix would count as an extra "vote".
   const lines: Line[] = input.map((l) => {
     const { raw, chorus: _c, ...rest } = l;
     return raw !== undefined && raw !== l.text ? { ...rest, text: raw } : rest;
   });
   const n = lines.length;
   const words = lines.map((l) => toks(l.text).length);
-  // Похожие пары строк.
+  // Similar line pairs.
   const sim: number[][] = Array.from({ length: n }, () => new Array<number>(n).fill(0));
   for (let i = 0; i < n; i++) {
     if (words[i]! < MIN_WORDS) continue;
@@ -90,14 +90,14 @@ export function reconcileChorus(input: Line[]): ChorusResult {
       sim[i]![j] = sim[j]![i] = s;
     }
   }
-  // Повтор считается припевом, только если повторяется и соседняя строка (кусок из 2+ строк).
+  // A repeat counts as a chorus only if the neighbouring line repeats too (a section of 2+ lines).
   const parent = Array.from({ length: n }, (_, i) => i);
   const find = (x: number): number => (parent[x] === x ? x : (parent[x] = find(parent[x]!)));
   const near = (i: number, j: number) => (i >= 0 && j >= 0 && i < n && j < n ? sim[i]![j]! >= SIM : false);
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
       if (sim[i]![j]! < SIM) continue;
-      if (j - i < 2) continue; // соседние одинаковые строки — это не повтор куска
+      if (j - i < 2) continue; // identical adjacent lines are not a repeated section
       if (!near(i - 1, j - 1) && !near(i + 1, j + 1)) continue;
       parent[find(j)] = find(i);
     }
@@ -124,7 +124,7 @@ export function reconcileChorus(input: Line[]): ChorusResult {
 }
 
 const avgProb = (l: Line) => (l.words.length ? l.words.reduce((a, w) => a + (w.prob ?? 1), 0) / l.words.length : 1);
-/** Вес голоса слова: своя уверенность модели, а если её нет (Groq) — уверенность всей строки. */
+/** A word's vote weight: the model's own confidence in it, or, if absent (Groq), the whole line's confidence. */
 const weightOf = (l: Line, k: number) => {
   const p = l.words[k]?.prob;
   return p !== undefined && p < 1 ? p : (l.conf ?? 1);
@@ -136,9 +136,9 @@ interface Slots {
 }
 
 /**
- * Голосование по словам: за основу берётся самый «типичный» вариант строки (больше всего похож на
- * остальные), с ним выравнивается каждый повтор, и для каждого места считается, какое слово
- * услышано чаще (голос весит столько, насколько модель уверена в слове).
+ * Word voting: the most "typical" variant of the line is the base (the one most similar to the
+ * others), every repeat is aligned to it, and for each position we count which word was
+ * heard more often (a vote weighs as much as the model's confidence in the word).
  */
 function vote(variants: Line[]): Slots {
   let base = variants[0]!;
@@ -163,9 +163,9 @@ function vote(variants: Line[]): Slots {
 }
 
 /**
- * Слова повтора, за которые проголосовало меньшинство, заменяются словом большинства.
- * При равенстве голосов (например, припев прозвучал дважды и варианты разные) ничего не меняем:
- * неизвестно, какой из них верный. Число слов не меняется — время слов остаётся прежним.
+ * Words of a repeat that only a minority voted for are replaced with the majority word.
+ * On a tie (e.g. the chorus was heard twice with different variants) nothing changes:
+ * we can't know which one is right. The word count doesn't change, so word timings stay the same.
  */
 function applyVotes(l: Line, slots: Slots): Line | null {
   const ws = toks(l.text);
@@ -186,7 +186,7 @@ function applyVotes(l: Line, slots: Slots): Line | null {
   return { ...l, text, words };
 }
 
-/** Новое слово с регистром первой буквы и знаками по краям — как у исходного. */
+/** The new word with the original's first-letter case and surrounding punctuation. */
 function keepPunct(orig: string, next: string): string {
   const core = (s: string) => s.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
   const pre = orig.match(/^[^\p{L}\p{N}]*/u)![0];

@@ -1,10 +1,10 @@
 /**
- * Запись звука вкладки с разрешения пользователя (системное окно Chrome «Показать эту вкладку?»).
+ * Recording the tab's audio with the user's permission (Chrome's "Share this tab?" prompt).
  *
- * Обычный способ (chrome.tabCapture) требует клика по иконке расширения. Этот — кнопки на самой
- * странице: getDisplayMedia с preferCurrentTab показывает окно с одной вкладкой (этой) и кнопкой
- * «Разрешить». Звук трека для пользователя глушится (suppressLocalAudioPlayback), а сам звук
- * кусками уходит в offscreen-документ расширения — там тот же конвейер распознавания.
+ * The usual way (chrome.tabCapture) requires clicking the extension icon. This one uses a button on
+ * the page itself: getDisplayMedia with preferCurrentTab shows a prompt with a single tab (this one) and an
+ * "Allow" button. The track is muted for the user (suppressLocalAudioPlayback), and the audio
+ * goes in chunks to the extension's offscreen document - the same recognition pipeline.
  */
 
 let stream: MediaStream | null = null;
@@ -13,12 +13,12 @@ let port: chrome.runtime.Port | null = null;
 
 export type PageCaptureError = 'denied' | 'noAudio' | 'failed';
 
-/** Спросить разрешение и получить звук вкладки. Вызывать только из обработчика клика. */
+/** Ask for permission and get the tab audio. Call only from a click handler. */
 export async function requestTabAudio(): Promise<MediaStreamTrack | PageCaptureError> {
   let s: MediaStream;
   try {
     s = await navigator.mediaDevices.getDisplayMedia({
-      video: true, // без видео Chrome окно не покажет; видеодорожку сразу останавливаем
+      video: true, // Chrome won't show the prompt without video; the video track is stopped right away
       audio: { suppressLocalAudioPlayback: true },
       preferCurrentTab: true,
       selfBrowserSurface: 'include',
@@ -33,18 +33,18 @@ export async function requestTabAudio(): Promise<MediaStreamTrack | PageCaptureE
   const audio = s.getAudioTracks()[0];
   if (!audio) {
     for (const tr of s.getTracks()) tr.stop();
-    return 'noAudio'; // в окне Chrome сняли галочку «Звук вкладки»
+    return 'noAudio'; // "Share tab audio" was unchecked in Chrome's prompt
   }
   stream = s;
   return audio;
 }
 
-/** Передавать звук в расширение (после того как фоновый скрипт подготовил распознавание). */
+/** Stream audio to the extension (after the background script has prepared recognition). */
 export function startStreaming(audio: MediaStreamTrack, onEnded: () => void) {
   ctx = new AudioContext();
   void ctx.resume().catch(() => {});
   const src = ctx.createMediaStreamSource(new MediaStream([audio]));
-  // ScriptProcessor, а не AudioWorklet: модулю worklet на чужой странице может помешать её политика безопасности.
+  // ScriptProcessor, not AudioWorklet: a worklet module on someone else's page may be blocked by its security policy.
   const sp = ctx.createScriptProcessor(4096, 2, 1);
   const mute = ctx.createGain();
   mute.gain.value = 0;
@@ -56,9 +56,9 @@ export function startStreaming(audio: MediaStreamTrack, onEnded: () => void) {
     port = null;
   });
   const sr = ctx.sampleRate;
-  // Звук блока прозвучал раньше, чем сработал onaudioprocess: ScriptProcessor держит ещё один
-  // буфер, плюс задержка самого захвата вкладки. Без поправки при ускорении ×2.5–3 строки
-  // получали время позже настоящего (на ускорении каждая миллисекунда задержки — ~3 мс трека).
+  // The block's audio played before onaudioprocess fired: ScriptProcessor holds one more
+  // buffer, plus the tab capture's own latency. Without a correction, at x2.5-3 speed lines
+  // got later timings than real (at speed every millisecond of latency is ~3 ms of the track).
   const lagMs = (4096 / sr) * 1000 + (ctx.baseLatency || 0) * 1000 + CAPTURE_LAG_MS;
   sp.onaudioprocess = (e) => {
     if (!port) return;
@@ -75,7 +75,7 @@ export function startStreaming(audio: MediaStreamTrack, onEnded: () => void) {
       port = null;
     }
   };
-  // Пользователь нажал «Остановить» на полоске Chrome «Вы показываете эту вкладку».
+  // The user pressed "Stop" on Chrome's "You are sharing this tab" bar.
   audio.addEventListener('ended', onEnded);
 }
 
@@ -87,7 +87,7 @@ export function stopPageCapture() {
   try {
     port?.disconnect();
   } catch {
-    /* уже закрыт */
+    /* already closed */
   }
   port = null;
 }
@@ -103,5 +103,5 @@ function toBase64(pcm: Int16Array): string {
   return btoa(bin);
 }
 
-/** Задержка захвата звука вкладки (getDisplayMedia) до попадания в страницу, мс — оценка. */
+/** Latency of tab audio capture (getDisplayMedia) until it reaches the page, ms - an estimate. */
 const CAPTURE_LAG_MS = 60;

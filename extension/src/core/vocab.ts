@@ -1,12 +1,12 @@
 /**
- * Словари для подсказки распознаванию: мат и сленг (русский и английский) + свои слова пользователя.
+ * Vocabularies for prompting recognition: profanity and slang (Russian and English) + the user's own words.
  *
- * Whisper обучен на субтитрах, где мат часто вырезан, а сленга мало, поэтому на песнях он
- * пропускает такие слова или подставляет похожие «словарные». Если слова есть в подсказке (prompt),
- * модель охотнее пишет их как есть.
+ * Whisper was trained on subtitles where profanity is often cut and slang is rare, so on songs it
+ * skips such words or substitutes similar "dictionary" ones. If the words are in the prompt,
+ * the model is more willing to write them as they are.
  *
- * Ограничение: Whisper учитывает только последние ~224 токена подсказки (≈ 400 символов кириллицы),
- * поэтому ему достаётся короткая выборка самых частых слов, а DeepSeek получает словари целиком.
+ * Limitation: Whisper only uses the last ~224 prompt tokens (≈ 400 Cyrillic characters),
+ * so it gets a short selection of the most frequent words, while the AI correction gets the full vocabularies.
  */
 
 export const PROFANITY_RU = [
@@ -21,7 +21,7 @@ export const PROFANITY_EN = [
   'ass', 'asshole', 'dick', 'pussy', 'hoe', 'cock', 'bastard', 'piss',
 ];
 
-/** Сленг, который часто звучит в песнях (рэп, поп, клубная музыка). Сначала — самые частые. */
+/** Slang often heard in songs (rap, pop, club music). Most frequent first. */
 export const SLANG_RU = [
   'флекс', 'вайб', 'движ', 'хайп', 'кринж', 'бро', 'братан', 'тачка', 'хата', 'бабки',
   'лавэ', 'кэш', 'шмот', 'тусить', 'кайф', 'чилить', 'флоу', 'биф', 'фит', 'трэп',
@@ -44,11 +44,11 @@ export const SLANG_EN = [
 export interface VocabOptions {
   uncensored?: boolean;
   slang?: boolean;
-  /** Свои слова пользователя (имена, прозвища, редкий сленг) — через запятую или с новой строки. */
+  /** The user's own words (names, nicknames, rare slang) - comma- or newline-separated. */
   custom?: string;
 }
 
-/** Свои слова пользователя: через запятую, точку с запятой или с новой строки. */
+/** The user's own words: separated by commas, semicolons or newlines. */
 export function parseCustomWords(raw: string | null | undefined): string[] {
   return (raw ?? '')
     .split(/[,;\n]+/)
@@ -57,11 +57,11 @@ export function parseCustomWords(raw: string | null | undefined): string[] {
     .slice(0, 100);
 }
 
-const BUDGET = 360; // символов на словарь: вместе с названием трека это укладывается в ~224 токена Whisper
+const BUDGET = 360; // characters for the vocabulary: together with the track title this fits into Whisper's ~224 tokens
 
 /**
- * Словарная часть подсказки Whisper: свои слова (важнее всего), затем сленг и мат вперемешку
- * по частоте — сколько влезет в бюджет.
+ * The vocabulary part of the Whisper prompt: custom words (most important), then slang and profanity mixed
+ * by frequency - as much as fits the budget.
  */
 export function vocabPrompt(lang: string, opts: VocabOptions, budget = BUDGET): string {
   const custom = parseCustomWords(opts.custom);
@@ -84,7 +84,7 @@ export function vocabPrompt(lang: string, opts: VocabOptions, budget = BUDGET): 
   return out.length ? `${out.join(', ')}.` : '';
 }
 
-/** Чередует два списка: по два слова мата на одно слово сленга (мат Whisper теряет чаще). */
+/** Interleaves two lists: two profanity words per slang word (Whisper loses profanity more often). */
 function interleave(a: string[], b: string[]): string[] {
   const out: string[] = [];
   let i = 0;
@@ -97,7 +97,7 @@ function interleave(a: string[], b: string[]): string[] {
   return out;
 }
 
-/** Полный словарь для DeepSeek (у него нет жёсткого ограничения на длину подсказки). */
+/** Full vocabulary for the AI correction (it has no strict prompt length limit). */
 export function glossaryFor(opts: VocabOptions): string[] {
   return [
     ...parseCustomWords(opts.custom),
@@ -110,8 +110,8 @@ const norm = (w: string) => w.toLowerCase().replace(/ё/g, 'е');
 const VOCAB = new Set([...PROFANITY_RU, ...PROFANITY_EN, ...SLANG_RU, ...SLANG_EN].map(norm));
 
 /**
- * Модель иногда «повторяет» подсказку на проигрыше: строка почти целиком из слов словаря через запятую.
- * Такую строку выбрасываем (в настоящей песне слова не идут списком через запятую).
+ * The model sometimes "repeats" the prompt during an instrumental: a line made almost entirely of comma-separated vocabulary words.
+ * Such a line is dropped (in a real song words don't come as a comma-separated list).
  */
 export function isPromptEcho(text: string, custom: string[] = []): boolean {
   if (/без цензуры|uncensored/i.test(text)) return true;

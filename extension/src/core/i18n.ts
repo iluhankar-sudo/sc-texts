@@ -1,11 +1,11 @@
 /**
- * Язык интерфейса — по языку браузера (chrome.i18n.getUILanguage).
- * Русский для ru, английский для всех остальных языков.
+ * UI language follows the browser language (chrome.i18n.getUILanguage).
+ * Russian for ru, English for all other languages.
  */
 import { baseLang } from './lang.ts';
 
 const en = {
-  // окошко
+  // popup
   tagline: 'Song lyrics from a link',
   lastTrack: 'Last track',
   openingTrack: 'Opening the track…',
@@ -98,7 +98,7 @@ const en = {
   translatingTo: 'Translating to {lang}…',
   downloadingTranslator: 'Downloading Chrome translator… {p}%',
   translateFailed: 'Translation failed: {msg}',
-  // страница SoundCloud
+  // SoundCloud page
   startingTrack: 'Starting the track…',
   listeningTrack: 'Listening to the track…',
   listeningFast: 'Listening to the track at ×{x}…',
@@ -126,7 +126,7 @@ const en = {
   capDenied: 'Permission was not given. Press the button again and choose “Allow”.',
   capNoAudio: 'The tab audio was not shared. Press the button again and keep “Also share tab audio” on.',
   capFailed: 'Could not start recording. Press the button again or click the sc texts icon.',
-  // распознавание и перевод
+  // recognition and translation
   recFailed: 'Recognition failed: {msg}',
   noElevenKey: 'ElevenLabs key is not set (extension settings)',
   noApiKey: 'API key is not set (extension settings)',
@@ -134,7 +134,7 @@ const en = {
   captureFailed: "Couldn't capture audio: {msg}",
   noTranslator: "Chrome's built-in translator is unavailable and no cloud key is set",
   partialTranslation: 'the model returned an incomplete translation',
-  // настройки
+  // settings
   optTitle: 'sc texts: settings',
   optMode: 'Recognition method',
   optModeCloud: 'Cloud (needs an API key, nothing to install)',
@@ -400,7 +400,7 @@ const ru: Record<MsgKey, string> = {
 
 const DICT: Record<'ru' | 'en', Record<MsgKey, string>> = { ru, en };
 
-/** Язык интерфейса: ru для русского браузера, иначе en. */
+/** UI language: ru for a Russian browser, otherwise en. */
 export function uiLang(tag?: string): 'ru' | 'en' {
   let t = tag;
   if (!t) {
@@ -416,7 +416,7 @@ export function uiLang(tag?: string): 'ru' | 'en' {
 let lang: 'ru' | 'en' | null = null;
 const current = () => (lang ??= uiLang());
 
-/** Для тестов. */
+/** For tests. */
 export function setLang(l: 'ru' | 'en') {
   lang = l;
 }
@@ -426,7 +426,7 @@ export function t(key: MsgKey, vars?: Record<string, string | number>): string {
   return vars ? s.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)) : s;
 }
 
-/** Переводит статичную разметку: data-i18n (текст), data-i18n-placeholder, data-i18n-title, data-i18n-aria. */
+/** Translates static markup: data-i18n (text), data-i18n-placeholder, data-i18n-title, data-i18n-aria. */
 export function applyI18n(root: ParentNode = document) {
   root.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => (el.textContent = t(el.dataset.i18n as MsgKey)));
   root.querySelectorAll<HTMLInputElement>('[data-i18n-placeholder]').forEach((el) => (el.placeholder = t(el.dataset.i18nPlaceholder as MsgKey)));

@@ -2,11 +2,11 @@ import { normalizeText } from './filter.ts';
 import type { Line, Range } from './types.ts';
 
 export interface MergeOpts {
-  /** Отступ от краёв окна, которому не доверяем (обычно overlap/2). */
+  /** Margin from the window edges that we don't trust (usually overlap/2). */
   edge: number;
-  /** Первое окно после перемотки/старта: левому краю доверяем. */
+  /** First window after a seek/start: trust the left edge. */
   first: boolean;
-  /** Последнее окно (пауза/конец): правому краю доверяем. */
+  /** Last window (pause/end): trust the right edge. */
   last: boolean;
 }
 
@@ -28,7 +28,7 @@ function similarity(a: string, b: string): number {
   return inter / (ta.size + tb.size - inter);
 }
 
-/** Убирает дубли одной и той же строки, распознанной двумя соседними окнами. */
+/** Removes duplicates of the same line recognized by two neighbouring windows. */
 export function dedupeAdjacent(lines: Line[]): Line[] {
   const out: Line[] = [];
   for (const l of lines) {
@@ -47,9 +47,9 @@ export function dedupeAdjacent(lines: Line[]): Line[] {
 }
 
 /**
- * Вливает результаты нового окна в накопленные строки.
- * Строки в абсолютном времени трека. Заменяется только «доверенная» середина окна:
- * соседние окна с перекрытием 2*edge тогда стыкуются без дыр и дублей.
+ * Merges a new window's results into the accumulated lines.
+ * Lines are in absolute track time. Only the "trusted" middle of the window is replaced:
+ * neighbouring windows with a 2*edge overlap then join without gaps or duplicates.
  */
 export function mergeChunk(
   existing: Line[],

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { readPlayer, SELECTORS } from '../src/content/player.ts';
 
-/** Минимальная заглушка Document: селектор → элемент. */
+/** A minimal Document stub: selector → element. */
 function fakeDoc(map: Record<string, { text?: string; attrs?: Record<string, string>; classes?: string[] }>) {
   const el = (d: { text?: string; attrs?: Record<string, string>; classes?: string[] }) => ({
     textContent: d.text ?? '',

@@ -1,60 +1,77 @@
 # sc texts
 
-Chrome-расширение (Manifest V3), которое показывает субтитры к играющему треку SoundCloud
-почти в реальном времени. Звук вкладки режется на окна, распознаётся локальным Whisper
-(русский и английский) и выводится панелью поверх страницы с подсветкой слов.
+A Chrome extension (Manifest V3) that shows lyrics for SoundCloud tracks. Paste a track link (or open a track) and the extension:
 
-Как получается звук, и почему именно так: [docs/AUDIO_RESEARCH.md](docs/AUDIO_RESEARCH.md).
-Коротко: `chrome.tabCapture` + offscreen document, то есть записывается то, что вкладка и так
-играет пользователю. Никакого скачивания потока и обхода защиты нет.
+1. looks for ready-made lyrics in public databases (LRCLIB, Genius, NetEase, Kugou);
+2. if there are none, or they have no line timings, transcribes the track's audio with Whisper and syncs the text to it;
+3. shows the lyrics with karaoke-style line highlighting, translation, copying, pinning, manual editing and click-to-seek.
 
-## Установить готовое расширение
+How the audio is obtained, and why: [docs/AUDIO_RESEARCH.md](docs/AUDIO_RESEARCH.md). In short, the extension records what the tab is already playing to the user (`chrome.tabCapture` or a tab-sharing prompt). It never downloads the stream or bypasses any protection.
 
-1. Откройте [Releases](../../releases/latest) и скачайте `sc-texts.zip`.
-2. Распакуйте архив в папку.
-3. В Chrome откройте `chrome://extensions`, включите «Режим разработчика» → «Загрузить распакованное» → выберите эту папку.
+## Install the ready-made extension
 
-Своего ключа не нужно: распознавание идёт через сервер-посредник владельца (см. ниже).
-Если у вас есть свой ключ Groq — вставьте его в настройках расширения (⋮ → «Ключ API»), тогда запросы пойдут напрямую.
+1. Open [Releases](../../releases/latest) and download `sc-texts.zip`.
+2. Unpack it into a folder.
+3. In Chrome open `chrome://extensions`, turn on **Developer mode** → **Load unpacked** → choose that folder.
 
-## Автосборка и сервер-посредник
+No key is needed: recognition goes through the owner's proxy (see below). If you have your own Groq key, paste it in the extension settings (⋮ → API key) and requests will go directly to Groq.
 
-При каждом push в `master` GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)):
+## Features
 
-1. проверяет и (если заданы секреты) разворачивает сервер-посредник на Cloudflare Workers — он держит ключ Groq у себя;
-2. прогоняет тесты расширения, собирает его **без ключа**, с адресом посредника, и выкладывает `sc-texts.zip` в Releases.
+- **Ready lyrics first.** Title and artist come from SoundCloud's oEmbed (with fallbacks to the page and the URL). All sources are queried in parallel with a short deadline and strict title/artist matching. Timed lyrics are shown immediately; untimed ones are synced to the audio by recognition.
+- **Recognition from audio.** The track plays muted and sped up (Auto: up to ×3, ×2.5 with AudioShake) while short chunks are transcribed for a live preview. At the end the whole recording is transcribed in one request for full song context.
+- **Accuracy helpers.** Vocabulary prompt (artist, title, custom words, profanity and slang), high-pass filter and normalization, language lock per track, hallucination filters, line starts tightened to the first sung word, capture-latency compensation.
+- **Chorus cross-check.** Repeated multi-line sections are detected during recognition; each word of a repeat is replaced by the variant heard most often across repeats (ties are broken by model confidence).
+- **AI correction.** Misheard words are fixed by an LLM that sees both transcriptions, the title and the artist: free via Groq (`llama-3.3-70b-versatile`), or DeepSeek with your own key. Lines the model rewrote almost entirely are kept as recognized.
+- **Karaoke.** Appears once lyrics are ready; whole lines light up in time with the track. Lyrics without timings get approximate timings.
+- **Click a line to seek.** Jumps the SoundCloud player to that line (pointer cursor on hover).
+- **Pin and edit.** Pinned or hand-edited lyrics are kept for the track and never re-recognized.
+- **Translation.** Chrome's built-in translator (Chrome 138+) or Groq.
+- **Short links.** `on.soundcloud.com/…` links are resolved to the full track URL.
 
-Настройка — один раз, секреты в Settings → Secrets and variables → Actions: `GROQ_KEY`, `CLOUDFLARE_API_TOKEN`,
-`CLOUDFLARE_ACCOUNT_ID` (и по желанию `APP_TOKEN`). Подробно — [proxy/README.md](proxy/README.md).
+## Auto build and proxy
 
-Собрать для себя с вшитым ключом: `cd extension && npm install && DEFAULT_API_KEY=gsk_... node build.mjs` (такую сборку не публикуйте).
+On every push to `master`, GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)):
 
-## Состав
+1. runs the proxy tests and, if the secrets are set, deploys the proxy to Cloudflare Workers (it keeps the Groq key server-side);
+2. runs the extension tests, builds it **without a key** but with the proxy address, and publishes `sc-texts.zip` to Releases.
+
+One-time setup, in Settings → Secrets and variables → Actions: `GROQ_KEY`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (and optionally `APP_TOKEN`). Details: [proxy/README.md](proxy/README.md).
+
+To build a personal copy with an embedded key: `cd extension && npm install && DEFAULT_API_KEY=gsk_... node build.mjs` (do not publish such a build).
+
+## Layout
 
 ```
-backend/                      FastAPI + faster-whisper
-  app/main.py                 /health, /transcribe
-  prototype_cli.py            прототип: аудиофайл → строки с таймкодами
-  static/upload.html          прототип: страница загрузки файла
-  tests/test_api.py           тесты API (модель подменена заглушкой)
-  requirements.txt
 extension/
-  public/                     manifest.json, offscreen.html, options.html, pcm-worklet.js
-  src/background.ts           клик по иконке, offscreen-документ, пересылка сообщений
-  src/offscreen.ts            захват, нарезка на окна, WAV, запросы к бэкенду
-  src/options.ts              страница настроек
-  src/content/                плеер SoundCloud (player.ts), контроллер, React-панель
-  src/core/                   чистая логика без chrome.*: часы, слияние окон, фильтры, sync
-  tests/                      юнит-тесты (node --test)
-  build.mjs                   сборка esbuild → dist/
+  public/                manifest.json, popup, options, offscreen document, page hook, locales
+  src/background.ts      service worker: capture, link queue, lyrics lookup, messaging
+  src/offscreen.ts       audio pipeline: resampling, chunking, WAV, transcription requests
+  src/popup.ts           the popup UI
+  src/content/           SoundCloud player integration, recognition controller, page capture
+  src/core/              pure logic without chrome.*: clock, merging, filters, alignment, chorus, i18n
+  src/lyrics.ts, providers.ts   LRCLIB / Genius / NetEase / Kugou lookups
+  tests/                 unit tests (node --test)
+  build.mjs              esbuild build → dist/
+proxy/                   Cloudflare Worker that forwards requests to Groq
+backend/                 optional local FastAPI + faster-whisper server (prototype)
 docs/AUDIO_RESEARCH.md
 ```
 
-## Запуск
+## Development
 
-Нужны Python 3.10+, Node 22+, Chrome 116+.
+Requires Node 22+ and Chrome 116+.
 
-### 1. Бэкенд
+```bash
+cd extension
+npm install
+npm run build        # output in extension/dist
+npm test             # unit tests, no extra dependencies
+```
+
+Load `extension/dist` via **Load unpacked**. Reload already open SoundCloud tabs after updating.
+
+Optional local recognition server (Python 3.10+):
 
 ```bash
 cd backend
@@ -63,205 +80,15 @@ pip install -r requirements.txt
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Первый запрос скачает модель Whisper. Переменные окружения:
-`WHISPER_MODEL` (по умолчанию `small`; для слабого CPU `base`, для GPU `medium`/`large-v3`),
-`WHISPER_DEVICE` (`auto`/`cpu`/`cuda`), `WHISPER_COMPUTE` (`int8`, на GPU `float16`).
+Environment variables: `WHISPER_MODEL` (default `small`), `WHISPER_DEVICE` (`auto`/`cpu`/`cuda`), `WHISPER_COMPUTE` (`int8`, `float16` on GPU).
 
-### 2. Расширение
+## Limitations
 
-```bash
-cd extension
-npm install
-npm run build        # результат в extension/dist
-```
+- The track has to play through (sped up) to be recognized; nothing is downloaded.
+- SoundCloud's player selectors (`extension/src/content/player.ts`, `SELECTORS`) are undocumented and may change.
+- Song recognition is hard for every model; the best public systems still get 16–20% of words wrong on the Jam-ALT benchmark.
+- Chrome allows only one recorder per tab: if the tab is being shared in Meet, Zoom, etc., the track is recognized in a separate tab.
 
-Chrome → `chrome://extensions` → включить «Режим разработчика» → «Загрузить распакованное» →
-выбрать `extension/dist`. Уже открытые вкладки SoundCloud нужно обновить.
+## Privacy
 
-### 3. Использование: текст по ссылке
-
-1. Нажмите на иконку расширения на любой обычной вкладке (не на `chrome://`-странице).
-2. Вставьте ссылку на трек SoundCloud (`https://soundcloud.com/артист/трек` или короткую
-   `on.soundcloud.com/...`) и нажмите →. Если вкладка уже открыта на треке, достаточно нажать →.
-3. Если вкладка на soundcloud.com, трек запускается в нижнем плеере, а вы остаётесь на текущей странице
-   (на секунду откроется страница трека и сразу вернётся прежняя). На другом сайте трек откроется в этой
-   же вкладке: Chrome даёт записывать звук только вкладки, где нажата иконка. Дальше расширение прослушает трек до конца,
-   по умолчанию без звука (кнопка 🔇/🔊 в поле ссылки). Строки появляются по ходу.
-4. Когда трек закончится, текст сохраняется, и его можно скопировать кнопкой «Копировать текст».
-
-Трек не скачивается: расширение слушает его во вкладке, как обычный пользователь, поэтому
-на обработку уходит столько же времени, сколько длится трек. Подробнее: docs/AUDIO_RESEARCH.md.
-
-### Качество распознавания песен
-
-Распознавание песен — трудная задача для всех моделей: в открытых тестах лучшие системы
-ошибаются в 16–20% слов (Jam-ALT). Что сделано по результатам исследований:
-- **Финальный проход целиком.** Расширение сохраняет весь записанный трек и в конце распознаёт его
-  одним запросом: с полным контекстом песни точнее, чем кусками. Куски по 40 секунд остаются как быстрый
-  предварительный результат; финальный заменяет их, только если не короче по объёму текста.
-- **Whisper v2.** На песнях large-v2 ошибается реже, чем large-v3 (около 28% против 33% на Jam-ALT),
-  а turbo теряет часть вокала. v2 доступна у OpenAI как `whisper-1` (нужен ключ OpenAI;
-  OpenAI планирует отключить её 26 февраля 2027 года).
-- **Два варианта для DeepSeek.** Если задан ключ DeepSeek, он получает финальный текст и текст по кускам
-  и при расхождениях выбирает подходящий вариант (подход LyricWhiz: несколько прогонов Whisper + языковая модель).
-
-### AudioShake (финальное распознавание)
-
-AudioShake — сервис, сделанный специально для текстов песен (лучший опубликованный результат на тесте
-Jam-ALT — около 16% ошибок в словах). Если в настройках задан ключ AudioShake, после прослушивания вся
-запись трека загружается в AudioShake (`POST /assets`), запускается модель `alignment` (`POST /tasks`,
-слова и строки со временем, язык `ru`/`en` передаётся), результат забирается опросом раз в 5 секунд.
-Предварительный текст во время прослушивания по-прежнему даёт Whisper. При ошибке AudioShake
-(нет кредитов, тайм-аут и т.п.) выполняется обычный финальный проход Whisper.
-- Схема JSON результата в документации не описана — разбор «терпимый», запасной вариант — SRT.
-- Ссылки на результаты ведут на хранилище AudioShake, поэтому при сохранении ключа расширение
-  запрашивает доступ к сайтам (optional host permission).
-- 1 кредит за минуту трека, 10 кредитов при регистрации; цена кредита — в личном кабинете.
-- С ключом AudioShake режим скорости «Авто» не поднимается выше ×4 (без потери частот).
-
-### Защита от «бардака»
-
-На музыке Whisper иногда ошибается с языком (выдаёт, например, индонезийский текст) и «досочиняет»
-слова на проигрышах. Поэтому:
-- язык закрепляется на весь трек по первому куску с пением; если модель решила, что это не русский
-  и не английский, кусок распознаётся с обоими языками и берётся вариант, где модель увереннее;
-- строки с низкой уверенностью модели (avg_logprob < −1), зацикливанием (compression_ratio > 2.4),
-  «тишиной» и короткие неуверенные обрывки («Here!», «The») отбрасываются;
-- распознавание детерминированное (temperature 0).
-Язык можно и задать вручную в настройках (⋮ → «Язык песни»).
-
-### Исправление текста через DeepSeek
-
-DeepSeek не слышит звук: это текстовая модель. Если в настройках задан ключ DeepSeek, после
-распознавания все строки одним запросом отправляются в DeepSeek вместе с названием и исполнителем
-(сам звук не отправляется). Модель исправляет неверно услышанные слова, орфографию и пунктуацию и
-помечает явный мусор. Порядок и число строк сохраняются, поэтому тайминги строк для караоке остаются;
-пословная подсветка сохраняется только у строк, которые по сути не изменились. Если ответ модели
-непригоден (другое число строк, пустой ответ, выброшено больше 60% строк), текст остаётся как был.
-Для уже распознанных треков есть кнопка «Исправить через DeepSeek». Тексты из LRCLIB не исправляются.
-Модель по умолчанию — `deepseek-flash`, её можно сменить в настройках.
-
-### Демонстрация экрана
-
-Chrome не даёт двум программам записывать одну вкладку. Если в Meet, Zoom, Discord и т.п. выбран
-показ «вкладки Chrome» с SoundCloud, расширение не может записывать её звук. В этом случае оно само
-открывает трек в соседней вкладке (нажмите там на иконку расширения). Чтобы всё работало в одной
-вкладке, показывайте окно или весь экран, а не вкладку. Чтобы зрители слышали трек, включите 🔊 в поле
-ссылки: тогда трек играет со звуком и без ускорения.
-
-Если распознавание «зависло» (например, вкладку перезагрузили посреди работы), окошко через 12 секунд
-само останавливает старую запись и разблокирует поле ссылки.
-
-### Другой трек во время распознавания
-
-Расширение держится за трек по ссылке. Если в плеере заиграл другой трек (вы переключили
-или SoundCloud включил следующий), его звук не записывается: запись встаёт на паузу, трек по
-ссылке открывается снова и продолжается с места остановки (с перекрытием 2 секунды, чтобы
-строки склеились без пропусков). Слова из хвоста, где уже звучал другой трек, отбрасываются.
-Если трек по ссылке был доигран до конца, переход на следующий означает обычное завершение.
-
-### Ускоренное распознавание
-
-При распознавании по ссылке трек играет без звука и быстрее. Высота тона при этом не сохраняется,
-и захваченный звук перед распознаванием пересчитывается с частотой дискретизации, делённой на
-скорость: модель получает исходный звук. По умолчанию режим «Авто»: скорость подбирается по длине
-трека, чтобы прослушивание заняло около 25 секунд, но не выше ×6. Трек 2:30 — около 25 с,
-3:00 — около 30 с, длиннее — дольше (или поставьте ×8 в настройках).
-
-Ограничение Chrome: на скорости ×N остаются частоты исходного трека примерно до 22 кГц / N.
-Замер (тон 3 кГц после ускорения и обратного растягивания): ×4 −2,6 дБ, ×6 −6,9 дБ, ×8 −18,8 дБ.
-До ×4 точность не меняется, на ×6 голос как в телефонной связи, на ×8 точность заметно падает.
-При ускорении звук отправляется кусками по 40 секунд трека, чтобы было меньше запросов.
-Если SoundCloud не успевает подгружать трек, запись звука приостанавливается до продолжения.
-
-### Готовые тексты (LRCLIB, Genius, NetEase, Kugou)
-
-Перед сканированием расширение ищет готовый текст в открытой базе LRCLIB (lrclib.net):
-название и исполнителя берёт из официального oEmbed SoundCloud. Если текст найден, звук не
-сканируется. Часто у таких текстов есть тайминги строк, тогда караоке работает сразу (подсветка
-по строкам, без пословной). Тексты без таймингов показываются целиком, без подсветки; для них
-есть кнопка «Распознать по звуку». В караоке готовый текст тоже ищется автоматически.
-
-Genius не используется: его API не отдаёт тексты, а их извлечение со страниц запрещено
-условиями сайта.
-
-### Если вы что-то слушаете
-
-Если в текущей вкладке SoundCloud играет другой трек, расширение не трогает его:
-трек по ссылке открывается в отдельной вкладке с подсказкой «Нажмите на иконку». После клика
-распознавание идёт там без звука, а вас возвращает в вашу вкладку. Когда трек дослушан, вкладка
-распознавания закрывается сама. Нажать на иконку нужно из-за правил Chrome: расширение может
-записывать звук только той вкладки, где пользователь сам его вызвал.
-
-Если по ссылке тот же трек, который сейчас играет, он распознаётся на месте и звук не глушится.
-
-### Караоке
-
-1. Сначала распознайте трек по ссылке (см. выше). Текст сохраняется для каждого трека, хранятся последние 30.
-2. Включите этот трек на soundcloud.com и нажмите в окошке 🎤.
-3. Текущая строка подсвечивается, слова загораются по мере пения (по таймкодам слов из Whisper).
-   Перемотка и пауза учитываются сразу.
-
-В караоке звук не захватывается и не распознаётся: показывается только сохранённый текст.
-Если трек ещё не распознан, окошко предложит нажать → и распознать его по ссылке.
-
-### Перевод
-
-Под текстом есть кнопка «Перевести на <язык браузера>». Перевод делается только по нажатию:
-сначала встроенным переводчиком Chrome (Chrome 138+, на устройстве, при первом использовании
-скачивается языковая модель), а если его нет — через Groq тем же ключом (модель задаётся в настройках).
-Переводятся только строки не на языке браузера; повторное нажатие скрывает перевод.
-
-## Как проверить распознавание
-
-### Без браузера (файл)
-
-```bash
-cd backend
-python prototype_cli.py путь/к/треку.mp3 --language ru
-python prototype_cli.py путь/к/треку.mp3 --server http://127.0.0.1:8000   # через запущенный бэкенд
-```
-
-Или откройте `backend/static/upload.html` в браузере: выберите файл, нажмите «Распознать»,
-строки подсвечиваются в такт воспроизведению, клик по строке перематывает.
-
-### На двух тестовых треках в SoundCloud
-
-Выберите два трека, которые вы вправе слушать и у которых вы знаете текст, например
-с лицензией Creative Commons:
-
-1. **Русский, чёткий вокал, умеренная аранжировка.** Язык «Русский». Ожидайте: строки
-   появляются с задержкой около длины окна (≈10 с) плюс время распознавания; текст совпадает
-   с тем, что вы слышите; во время инструментальных частей показывается `♪`.
-2. **Английский, плотная аранжировка или читка.** Язык «Английский» или «Авто». Ожидайте
-   больше ошибок на сильном фоне, это ограничение Whisper на музыке, а не расширения.
-
-Сценарии, которые стоит пройти на каждом треке:
-- пауза и продолжение: строки не сбиваются, панель показывает «♪» или последнюю строку;
-- перемотка назад: ранее распознанные строки показываются сразу;
-- перемотка вперёд в нераспознанный участок: «Слушаю…», затем строки появляются заново;
-- смена трека: панель очищается, распознавание начинается с нуля;
-- остановка бэкенда: индикатор краснеет, в панели появляется сообщение об ошибке.
-
-Если строки опережают или отстают от голоса, подберите «Сдвиг строк» в настройках.
-
-## Тесты
-
-```bash
-cd extension && npm test            # 12 тестов ядра и разбора плеера, зависимостей не нужно
-cd backend && pytest                # тесты API
-```
-
-## Ограничения
-
-- Задержка неизбежна: захват идёт со скоростью воспроизведения, а окно нужно накопить.
-- Селекторы плеера SoundCloud (`extension/src/content/player.ts`, объект `SELECTORS`) не
-  документированы и могут измениться. При поломке правится только этот файл.
-- Захват запускается только по клику на иконку (требование Chrome), автозапуска нет.
-- На CPU модель `small` может не успевать за реальным временем. Тогда в панели появится
-  предупреждение, а часть звука будет пропущена. Берите `base` или GPU.
-- На музыке Whisper склонен к «галлюцинациям». Часть из них отфильтровывается
-  (`core/filter.ts`), но не все.
-- Условия использования SoundCloud запрещают копировать контент и обходить защиту. Проект
-  рассчитан на личное использование на своём компьютере, аудио не сохраняется. Для публикации
-  в Chrome Web Store нужна юридическая проверка.
+See [PRIVACY.md](PRIVACY.md).

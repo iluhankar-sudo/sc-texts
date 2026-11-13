@@ -1,4 +1,4 @@
-"""Тесты API без загрузки настоящей модели: распознавание подменяется заглушкой."""
+"""API tests without loading the real model: recognition is replaced with a stub."""
 import io
 import sys
 from pathlib import Path

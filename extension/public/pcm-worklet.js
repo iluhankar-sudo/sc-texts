@@ -1,4 +1,4 @@
-// AudioWorklet: отдаёт моно-блоки Float32 (усреднение каналов) в основной поток offscreen-документа.
+// AudioWorklet: posts mono Float32 blocks (channels averaged) to the offscreen document's main thread.
 class PcmCapture extends AudioWorkletProcessor {
   process(inputs) {
     const input = inputs[0];

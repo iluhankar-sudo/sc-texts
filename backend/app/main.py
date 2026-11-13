@@ -1,8 +1,8 @@
-"""SoundCloud AI Lyrics: бэкенд распознавания речи (FastAPI + faster-whisper).
+"""sc texts: optional local speech recognition backend (FastAPI + faster-whisper).
 
-Принимает короткие аудиофрагменты (WAV/MP3/WebM/OGG), возвращает сегменты и слова
-с таймкодами относительно начала фрагмента. Аудио не сохраняется: временный файл
-удаляется сразу после распознавания.
+Accepts short audio fragments (WAV/MP3/WebM/OGG) and returns segments and words
+with timestamps relative to the fragment start. Audio is not stored: the temporary file
+is deleted right after recognition.
 """
 from __future__ import annotations
 
@@ -22,8 +22,8 @@ SUPPORTED_LANGS = {"ru", "en"}
 
 app = FastAPI(title="SoundCloud AI Lyrics backend", version="0.1.0")
 
-# Расширение обращается с chrome-extension:// и с https://soundcloud.com,
-# сервис слушает только localhost, поэтому CORS открыт.
+# The extension calls from chrome-extension:// and https://soundcloud.com;
+# the service listens on localhost only, so CORS is open.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -86,14 +86,14 @@ def run_transcription(path: str, language: Optional[str], offset: float) -> dict
 
 @app.on_event("startup")
 def preload_model() -> None:
-    """Загружаем модель при старте, чтобы первый трек не ждал скачивания."""
+    """Load the model at startup so the first track does not wait for the download."""
     if os.environ.get("SKIP_MODEL_PRELOAD") == "1":
         return
     try:
         get_model()
-        print(f"[ok] модель Whisper '{MODEL_SIZE}' загружена, можно слушать треки")
+        print(f"[ok] Whisper model '{MODEL_SIZE}' loaded, ready for tracks")
     except Exception as exc:  # noqa: BLE001
-        print(f"[!] не удалось загрузить модель: {exc}")
+        print(f"[!] failed to load the model: {exc}")
 
 
 @app.get("/health")
@@ -107,10 +107,10 @@ async def transcribe(
     language: Optional[str] = Form(None),
     offset: float = Form(0.0),
 ):
-    """Распознать фрагмент.
+    """Transcribe a fragment.
 
-    language: "ru", "en" или пусто (автоопределение).
-    offset: сдвиг в секундах, добавляется ко всем таймкодам (позиция фрагмента в треке).
+    language: "ru", "en" or empty (auto-detect).
+    offset: shift in seconds added to all timestamps (the fragment's position in the track).
     """
     if language in ("", "auto"):
         language = None

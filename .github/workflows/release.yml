@@ -1,15 +1,15 @@
-# Автосборка sc texts.
-# При каждом push в master:
-#   1) тесты посредника и (если заданы секреты Cloudflare) его развёртывание с ключом Groq;
-#   2) тесты расширения, сборка БЕЗ ключа (с адресом посредника) и выкладка архива в Releases.
+# sc texts auto build.
+# On every push to master:
+#   1) proxy tests and (if the Cloudflare secrets are set) deploying it with the Groq key;
+#   2) extension tests, a build WITHOUT a key (with the proxy address) and publishing the archive to Releases.
 #
-# Настройка (Settings → Secrets and variables → Actions), один раз:
-#   секреты:   GROQ_KEY               — ключ Groq (останется только на Cloudflare)
-#              CLOUDFLARE_API_TOKEN   — токен Cloudflare с правом «Edit Cloudflare Workers»
-#              CLOUDFLARE_ACCOUNT_ID  — ID аккаунта Cloudflare
-#              APP_TOKEN              — любая строка (необязательно; см. proxy/README.md)
-#   переменная: PROXY_URL             — адрес посредника (необязательно: берётся из развёртывания)
-name: Сборка и выпуск
+# One-time setup (Settings → Secrets and variables → Actions):
+#   secrets:   GROQ_KEY               - Groq API key (stays on Cloudflare only)
+#              CLOUDFLARE_API_TOKEN   - Cloudflare token with "Edit Cloudflare Workers" permission
+#              CLOUDFLARE_ACCOUNT_ID  - Cloudflare account ID
+#              APP_TOKEN              - any string (optional; see proxy/README.md)
+#   variable:  PROXY_URL              - proxy address (optional: taken from the deployment)
+name: Build and release
 
 on:
   push:
@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   proxy:
-    name: Посредник (Cloudflare Worker)
+    name: Proxy (Cloudflare Worker)
     runs-on: ubuntu-latest
     outputs:
       url: ${{ steps.deploy.outputs.url }}
@@ -39,9 +39,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Тесты посредника
+      - name: Proxy tests
         run: node --test proxy/test/proxy.test.js
-      - name: Развернуть на Cloudflare
+      - name: Deploy to Cloudflare
         id: deploy
         if: env.CLOUDFLARE_API_TOKEN != '' && env.GROQ_KEY != ''
         working-directory: proxy
@@ -54,17 +54,17 @@ jobs:
           if [ -n "$APP_TOKEN" ]; then printf '%s' "$APP_TOKEN" | npx wrangler secret put APP_TOKEN; fi
           url=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1 || true)
           if [ -z "$url" ]; then
-            echo "::error::Cloudflare не вернул адрес посредника. Если в журнале выше есть «register a workers.dev subdomain» — откройте dash.cloudflare.com → Workers & Pages и создайте поддомен workers.dev, затем перезапустите сборку."
+            echo "::error::Cloudflare did not return the proxy URL. If the log above mentions 'register a workers.dev subdomain', open dash.cloudflare.com → Workers & Pages, create a workers.dev subdomain and re-run the build."
             exit 1
           fi
-          echo "Посредник: $url"
+          echo "Proxy: $url"
           echo "url=$url" >> "$GITHUB_OUTPUT"
-      - name: Посредник не развёрнут
+      - name: Proxy not deployed
         if: env.CLOUDFLARE_API_TOKEN == '' || env.GROQ_KEY == ''
-        run: echo "::notice::Секреты CLOUDFLARE_API_TOKEN / GROQ_KEY не заданы — посредник не развёрнут (расширение будет просить свой ключ)."
+        run: echo "::notice::CLOUDFLARE_API_TOKEN / GROQ_KEY secrets are not set - the proxy is not deployed (the extension will ask for its own key)."
 
   extension:
-    name: Расширение
+    name: Extension
     needs: proxy
     runs-on: ubuntu-latest
     steps:
@@ -72,40 +72,40 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Зависимости
+      - name: Install dependencies
         working-directory: extension
         run: npm install --no-audit --no-fund
-      - name: Тесты
+      - name: Tests
         working-directory: extension
         run: npm test
-      - name: Сборка (без ключа, с адресом посредника)
+      - name: Build (no key, with the proxy address)
         working-directory: extension
         env:
           PROXY_URL: ${{ vars.PROXY_URL || needs.proxy.outputs.url }}
           APP_TOKEN: ${{ secrets.APP_TOKEN }}
         run: |
-          echo "Посредник в сборке: ${PROXY_URL:-нет}"
+          echo "Proxy in the build: ${PROXY_URL:-none}"
           node build.mjs
-          if grep -rqE 'gsk_[A-Za-z0-9]{20,}' dist; then echo "::error::В сборке оказался ключ Groq"; exit 1; fi
+          if grep -rqE 'gsk_[A-Za-z0-9]{20,}' dist; then echo "::error::A Groq key ended up in the build"; exit 1; fi
           cd dist && zip -qr ../../sc-texts.zip . -x '*.map'
-      - name: Выложить в Releases
+      - name: Publish to Releases
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           ver=$(node -p "require('./extension/public/manifest.json').version")
           tag="v${ver}"
-          notes="Скачайте sc-texts.zip, распакуйте и загрузите папку в chrome://extensions (режим разработчика → «Загрузить распакованное»). Обновлено из ${GITHUB_SHA::7}."
-          # Один выпуск на версию: новая сборка заменяет архив в нём, без «сборки N» в названии.
+          notes="Download sc-texts.zip, unpack it and load the folder in chrome://extensions (Developer mode → Load unpacked). Built from ${GITHUB_SHA::7}."
+          # One release per version: a new build replaces the archive in it, no build number in the title.
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" sc-texts.zip --clobber
             gh release edit "$tag" --title "sc texts ${ver}" --notes "$notes" --latest
           else
             gh release create "$tag" sc-texts.zip --title "sc texts ${ver}" --notes "$notes" --latest
           fi
-      - name: Убрать старые выпуски «сборка N»
+      - name: Remove old per-build releases
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release list --limit 100 --json tagName -q '.[].tagName' | grep -E -- '-build\.[0-9]+$' | while read -r t; do
-            echo "удаляю $t"; gh release delete "$t" --cleanup-tag -y
+            echo "deleting $t"; gh release delete "$t" --cleanup-tag -y
           done || true

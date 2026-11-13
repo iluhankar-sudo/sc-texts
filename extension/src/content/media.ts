@@ -1,6 +1,6 @@
 /**
- * Связь со скриптом в контексте страницы (public/page-hook.js): точное время воспроизведения
- * и скорость. События обрабатываются синхронно, поэтому ответ приходит сразу.
+ * Link to the script in the page context (public/page-hook.js): exact playback time
+ * and speed. Events are handled synchronously, so the reply comes immediately.
  */
 export interface MediaInfo {
   time: number;
@@ -21,7 +21,7 @@ if (typeof window !== 'undefined') {
   });
 }
 
-/** Точное состояние играющего медиа-элемента или null, если его не видно. */
+/** Exact state of the playing media element, or null if it isn't visible. */
 export function readMedia(): MediaInfo | null {
   if (typeof window === 'undefined') return null;
   last = null;
@@ -29,13 +29,13 @@ export function readMedia(): MediaInfo | null {
   return last && Number.isFinite(last.time) ? last : null;
 }
 
-/** Пауза + перемотка в начало (prepare), запуск (play) или перемотка на позицию (seek). */
+/** Pause + seek to start (prepare), play (play) or seek to a position (seek). */
 export function controlMedia(action: 'prepare' | 'play' | 'seek', speed?: number, time?: number) {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent('sctexts:control', { detail: JSON.stringify({ action, speed, time }) }));
 }
 
-/** Скорость воспроизведения (1–16). */
+/** Playback rate (1-16). */
 export function setMediaSpeed(rate: number) {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent('sctexts:speed', { detail: rate }));

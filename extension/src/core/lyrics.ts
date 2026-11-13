@@ -1,7 +1,7 @@
 /**
- * Готовые тексты из LRCLIB (https://lrclib.net) — открытой базы текстов с таймингами строк.
- * Здесь только чистая логика: разбор LRC, угадывание «исполнитель — трек» по названию
- * на SoundCloud и выбор лучшего совпадения.
+ * Ready lyrics from LRCLIB (https://lrclib.net), an open lyrics database with line timings.
+ * Pure logic only: LRC parsing, guessing "artist - track" from the SoundCloud
+ * title and picking the best match.
  */
 import type { CachedLine } from './cache.ts';
 
@@ -16,7 +16,7 @@ export interface LrcRecord {
   syncedLyrics?: string | null;
 }
 
-/** "[01:02.34] строка" → строки с временем начала; конец строки = начало следующей. */
+/** "[01:02.34] line" → lines with start times; a line's end = the next line's start. */
 export function parseLrc(lrc: string, duration?: number | null): CachedLine[] {
   const items: { start: number; text: string }[] = [];
   for (const raw of lrc.split(/\r?\n/)) {
@@ -31,14 +31,14 @@ export function parseLrc(lrc: string, duration?: number | null): CachedLine[] {
   items.sort((a, b) => a.start - b.start);
   const lines: CachedLine[] = [];
   items.forEach((it, i) => {
-    if (!it.text) return; // пустые строки в LRC — паузы
+    if (!it.text) return; // empty lines in LRC are pauses
     const next = items[i + 1]?.start ?? (duration ?? it.start + 5);
     lines.push({ start: it.start, end: Math.max(it.start + 0.5, Math.min(next, it.start + 10)), text: it.text, words: [] });
   });
   return lines;
 }
 
-/** Текст без таймингов → строки (время условное, подсветка для них отключается). */
+/** Lyrics without timings → lines (nominal times; highlighting is off for them). */
 export function plainToLines(plain: string): CachedLine[] {
   return plain
     .split(/\r?\n/)
@@ -48,9 +48,9 @@ export function plainToLines(plain: string): CachedLine[] {
 }
 
 /**
- * Примерные тайминги для текста без таймингов (караоке без распознавания):
- * строки раскладываются по длительности трека пропорционально длине, с отступом на вступление
- * и концовку. Пустые строки (границы куплетов) дают небольшую паузу.
+ * Approximate timings for lyrics without timings (karaoke without recognition):
+ * lines are spread over the track duration proportionally to length, with padding for the intro
+ * and outro. Empty lines (verse boundaries) give a short pause.
  */
 export function estimateTimings(texts: string[], duration: number): CachedLine[] {
   const lines = texts.map((t) => t.trim()).filter(Boolean);
@@ -58,7 +58,7 @@ export function estimateTimings(texts: string[], duration: number): CachedLine[]
   const pad = Math.min(15, Math.max(3, duration * 0.07));
   const from = pad;
   const to = Math.max(from + lines.length, duration - pad);
-  const weight = (s: string) => 4 + s.length; // короткие строки тоже звучат заметное время
+  const weight = (s: string) => 4 + s.length; // short lines still take noticeable time
   const total = lines.reduce((n, s) => n + weight(s), 0);
   const out: CachedLine[] = [];
   let cur = from;
@@ -77,7 +77,7 @@ export const norm = (s: string | null | undefined) =>
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
 
-/** Чистит название трека SoundCloud от «(prod. …)», «[Free DL]», «feat.» и т.п. */
+/** Cleans a SoundCloud track title of "(prod. ...)", "[Free DL]", "feat." and the like. */
 export function cleanTitle(title: string): string {
   return title
     .replace(/[([][^)\]]*\b(prod|produced|feat|ft|official|video|audio|lyrics?|free|dl|download|premiere|out now|snippet)\b[^)\]]*[)\]]/gi, '')
@@ -87,7 +87,7 @@ export function cleanTitle(title: string): string {
     .trim();
 }
 
-/** Варианты «исполнитель + трек» для поиска: из «A - B» в названии и из имени загрузившего. */
+/** "Artist + track" variants for search: from "A - B" in the title and from the uploader name. */
 export function guessArtistTrack(title: string, uploader: string | null): { artist: string; track: string }[] {
   const t = cleanTitle(title);
   const up = cleanTitle(uploader ?? '').replace(/\b(radio|records?|music|official|channel)\b/gi, '').trim();
@@ -99,7 +99,7 @@ export function guessArtistTrack(title: string, uploader: string | null): { arti
   return out.filter((c, i, a) => c.track && a.findIndex((x) => x.artist === c.artist && x.track === c.track) === i);
 }
 
-/** Выбирает лучшую запись: совпадение названия и исполнителя, длительность, наличие таймингов. */
+/** Picks the best record: title and artist match, duration, presence of timings. */
 export function pickBest(
   records: LrcRecord[],
   want: { artist: string; track: string; duration?: number | null },
@@ -115,7 +115,7 @@ export function pickBest(
     let score = 0;
     if (rt && rt === wt) score += 4;
     else if (rt && wt && (rt.includes(wt) || wt.includes(rt))) score += 2;
-    else continue; // название должно совпадать хотя бы частично
+    else continue; // the title must match at least partially
     if (wa && ra) {
       if (ra === wa) score += 3;
       else if (ra.includes(wa) || wa.includes(ra)) score += 2;

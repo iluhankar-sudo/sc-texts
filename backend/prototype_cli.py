@@ -1,10 +1,10 @@
-"""Прототип: распознать аудиофайл и вывести строки с таймкодами.
+"""Prototype: transcribe an audio file and print lines with timestamps.
 
-Использование:
+Usage:
     python prototype_cli.py track.mp3 --language ru
-    python prototype_cli.py track.mp3 --server http://127.0.0.1:8000   # через запущенный бэкенд
+    python prototype_cli.py track.mp3 --server http://127.0.0.1:8000   # via a running backend
 
-Без --server модель запускается локально (нужен faster-whisper).
+Without --server the model runs locally (requires faster-whisper).
 """
 from __future__ import annotations
 
@@ -21,9 +21,9 @@ def fmt(t: float) -> str:
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("audio")
-    p.add_argument("--language", default=None, help="ru, en или пусто для автоопределения")
-    p.add_argument("--server", default=None, help="URL бэкенда, например http://127.0.0.1:8000")
-    p.add_argument("--json", action="store_true", help="вывести сырой JSON")
+    p.add_argument("--language", default=None, help="ru, en or empty for auto-detect")
+    p.add_argument("--server", default=None, help="backend URL, e.g. http://127.0.0.1:8000")
+    p.add_argument("--json", action="store_true", help="print raw JSON")
     args = p.parse_args()
 
     if args.server:
@@ -48,7 +48,7 @@ def main() -> int:
         print()
         return 0
 
-    print(f"язык: {result['language']} ({result['language_probability']}), длительность: {result['duration']} c")
+    print(f"language: {result['language']} ({result['language_probability']}), duration: {result['duration']} s")
     for seg in result["segments"]:
         print(f"[{fmt(seg['start'])} → {fmt(seg['end'])}] {seg['text']}")
     return 0

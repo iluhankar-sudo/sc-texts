@@ -1,8 +1,8 @@
 import { groqEndpoint } from './core/config.ts';
 /**
- * Перевод строк песни на язык браузера.
- * 1) Встроенный переводчик Chrome (Translator API, Chrome 138+): работает на устройстве.
- * 2) Запасной вариант: чат-модель Groq/OpenAI-совместимого API с тем же ключом.
+ * Translating song lines into the browser's language.
+ * 1) Chrome's built-in translator (Translator API, Chrome 138+): runs on the device.
+ * 2) Fallback: a Groq/OpenAI-compatible chat model with the same key.
  */
 import { detectScriptLang, langName } from './core/lang.ts';
 import type { Config } from './core/types.ts';
@@ -43,7 +43,7 @@ function getBuiltin(src: string, tgt: string, onProgress?: (p: number) => void):
       }
     })();
     builtins.set(key, p);
-    // Неудачу не запоминаем: модель могла не скачаться без клика пользователя.
+    // Don't remember failures: the model may not have downloaded without a user click.
     void p.then((t) => {
       if (!t) builtins.delete(key);
     });
@@ -87,7 +87,7 @@ async function translateViaApi(texts: string[], tgt: string, cfg: Config): Promi
   return out;
 }
 
-/** Переводит строки, которые не на языке tgt. Возвращает карту «оригинал → перевод». */
+/** Translates lines not in the tgt language. Returns an "original → translation" map. */
 export async function translateLines(
   texts: string[],
   tgt: string,

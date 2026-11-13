@@ -1,6 +1,6 @@
 import type { Range } from './types.ts';
 
-/** Добавляет интервал, склеивая пересекающиеся. Возвращает новый массив. */
+/** Adds an interval, merging overlapping ones. Returns a new array. */
 export function addRange(ranges: Range[], r: Range): Range[] {
   if (r.end <= r.start) return ranges;
   const all = [...ranges, r].sort((a, b) => a.start - b.start);

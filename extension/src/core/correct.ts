@@ -1,8 +1,8 @@
 /**
- * Исправление распознанного текста языковой моделью (DeepSeek, OpenAI-совместимый API).
- * Модель не слышит звук: она получает строки Whisper вместе с названием и исполнителем,
- * исправляет неверно услышанные слова и помечает явный мусор. Порядок и число строк сохраняются,
- * поэтому сохраняются и тайминги строк (пословные — только у неизменённых строк).
+ * Fixing recognized lyrics with a language model (DeepSeek or Groq, OpenAI-compatible API).
+ * The model doesn't hear the audio: it gets Whisper's lines together with the title and artist,
+ * fixes misheard words and marks obvious garbage. The order and number of lines are kept,
+ * so line timings are kept too (word timings only for unchanged lines).
  */
 import { lineSim } from './chorus.ts';
 import { normalizeText } from './filter.ts';
@@ -11,9 +11,9 @@ import type { Line } from './types.ts';
 export interface CorrectionMeta {
   title: string | null;
   artist: string | null;
-  /** Независимый второй вариант распознавания того же трека (может быть разбит на строки иначе). */
+  /** An independent second transcription of the same track (may be split into lines differently). */
   alternative?: string | null;
-  /** Словарь (мат, сленг, свои слова): если неверно услышанное слово похоже на слово отсюда — скорее всего, это оно. */
+  /** Glossary (profanity, slang, custom words): if a misheard word resembles one of these, it most likely is that word. */
   glossary?: string[];
 }
 
@@ -55,8 +55,8 @@ interface CorrectionItem {
 }
 
 /**
- * Применяет ответ модели. Возвращает null, если ответ не подходит (другое число строк и т.п.) —
- * тогда остаётся исходный текст.
+ * Applies the model's reply. Returns null if the reply doesn't fit (a different number of lines, etc.) -
+ * then the original text stays.
  */
 export function applyCorrection(lines: Line[], raw: string | null | undefined): Line[] | null {
   if (!raw) return null;
@@ -77,13 +77,13 @@ export function applyCorrection(lines: Line[], raw: string | null | undefined): 
       return;
     }
     let text = typeof it?.text === 'string' && it.text.trim() ? it.text.trim() : src.text;
-    // Модель переписала строку почти целиком — это уже не исправление ослышки, оставляем распознанное.
+    // The model rewrote the line almost entirely - that's no longer fixing a mishearing, keep the recognized one.
     if (lineSim(text, src.text) < 0.4) text = src.text;
-    // Строка не изменилась по сути — оставляем пословные тайминги для караоке.
+    // The line didn't really change - keep the word timings for karaoke.
     const same = normalizeText(text) === normalizeText(src.text);
     out.push({ ...src, text, words: same ? src.words : [] });
   });
-  // Защита от «модель выкинула почти всё»: такой ответ не принимаем.
+  // Guard against "the model dropped almost everything": such a reply is rejected.
   if (lines.length >= 4 && dropped > lines.length * 0.6) return null;
   return out;
 }

@@ -1,7 +1,7 @@
 /**
- * Поиск готового текста трека (выполняется в фоновом скрипте):
- * метаданные — из официального oEmbed SoundCloud (или страницы трека), текст — из открытой базы LRCLIB
- * и дополнительных источников (Genius, NetEase, Kugou — см. providers.ts; включены по решению пользователя).
+ * Ready lyrics lookup for a track (runs in the background script):
+ * metadata from SoundCloud's official oEmbed (or the track page), lyrics from the open LRCLIB database
+ * and additional sources (Genius, NetEase, Kugou - see providers.ts).
  */
 import { pruneCache, trackKey, type CachedResult } from './core/cache.ts';
 import { guessArtistTrack, parseLrc, pickBest, plainToLines, type LrcRecord } from './core/lyrics.ts';
@@ -13,10 +13,10 @@ const LRCLIB = 'https://lrclib.net/api';
 const CLIENT = 'sc texts/0.1 (personal browser extension)';
 
 const REQUEST_TIMEOUT_MS = 3500;
-/** LRCLIB не ответил ни на один запрос — не дёргаем его какое-то время. */
+/** LRCLIB didn't answer any request - leave it alone for a while. */
 const DOWN_PAUSE_MS = 5 * 60 * 1000;
 let lrclibDownUntil = 0;
-let answered = 0; // сколько запросов LRCLIB получили ответ в текущем поиске
+let answered = 0; // how many LRCLIB requests got an answer in the current lookup
 
 async function getJson<T>(url: string, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T | null> {
   const ctrl = new AbortController();
@@ -42,7 +42,7 @@ export interface TrackMeta {
   duration: number | null;
 }
 
-/** Простой GET без лишних заголовков (SoundCloud отклоняет «чужие» заголовки). */
+/** A plain GET without extra headers (SoundCloud rejects "foreign" headers). */
 async function fetchText(url: string, timeoutMs: number): Promise<{ status: number; text: string } | { error: string }> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -56,10 +56,10 @@ async function fetchText(url: string, timeoutMs: number): Promise<{ status: numb
   }
 }
 
-/** Как получили название трека (для журнала). */
+/** How the track title was obtained (for the log). */
 export let metaNote = '';
 
-/** Название, автор и обложка по ссылке — через официальный oEmbed SoundCloud. */
+/** Title, author and artwork from a link - via SoundCloud's official oEmbed. */
 export async function oembedMeta(url: string): Promise<TrackMeta | null> {
   const r = await fetchText(`https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(url)}`, 3500);
   let j: { title?: string; author_name?: string; thumbnail_url?: string } | null = null;
@@ -73,14 +73,14 @@ export async function oembedMeta(url: string): Promise<TrackMeta | null> {
   metaNote = 'error' in r ? `oEmbed: ${r.error}` : `oEmbed: HTTP ${r.status}`;
   if (!j?.title) return null;
   const uploader = j.author_name ?? null;
-  // oEmbed отдаёт «Название by Автор» — убираем хвост.
+  // oEmbed returns "Title by Author" - strip the tail.
   const title = uploader ? j.title.replace(new RegExp(`\\s+by\\s+${uploader.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'), '') : j.title;
   return { title, uploader, artwork: j.thumbnail_url ?? null, duration: null };
 }
 
 /**
- * Название трека любой ценой: oEmbed → HTML страницы трека → сама ссылка.
- * (В отчёте пользователя oEmbed не ответил — и поиск готового текста не запускался вовсе.)
+ * The track title at any cost: oEmbed → track page HTML → the link itself.
+ * (In a user's report oEmbed didn't answer, and the ready-lyrics lookup never ran.)
  */
 export async function trackMeta(url: string, path: string | null): Promise<TrackMeta | null> {
   const viaOembed = await oembedMeta(url);
@@ -92,11 +92,11 @@ export async function trackMeta(url: string, path: string | null): Promise<Track
   const page = await fetchText(url, 4000);
   const fromPage = 'text' in page && page.text ? metaFromHtml(page.text) : null;
   if (fromPage) {
-    metaNote = `страница трека (${failed})`;
+    metaNote = `track page (${failed})`;
     return fromPage;
   }
   const fromPath = metaFromPath(path ?? safePath(url));
-  metaNote = fromPath ? `из ссылки (${failed}; страница: ${'error' in page ? page.error : `HTTP ${page.status}`})` : `нет (${failed})`;
+  metaNote = fromPath ? `from the link (${failed}; page: ${'error' in page ? page.error : `HTTP ${page.status}`})` : `none (${failed})`;
   return fromPath;
 }
 
@@ -108,7 +108,7 @@ function safePath(url: string): string | null {
   }
 }
 
-/** Ищет кандидата в LRCLIB: точный запрос (если известна длительность) и поиск — параллельно. */
+/** Looks up a candidate in LRCLIB: an exact request (if the duration is known) and a search, in parallel. */
 async function searchCandidate(c: { artist: string; track: string }, duration: number | null): Promise<LrcRecord | null> {
   const reqs: Promise<LrcRecord[]>[] = [];
   if (duration && c.artist) {
@@ -122,13 +122,13 @@ async function searchCandidate(c: { artist: string; track: string }, duration: n
   return pickBest(lists.flat(), { ...c, duration });
 }
 
-/** Сколько ждать все источники вместе. */
+/** How long to wait for all sources together. */
 const ALL_DEADLINE_MS = 8000;
 
 /**
- * Ищет готовый текст сразу во всех источниках (параллельно, не дольше ALL_DEADLINE_MS):
- * LRCLIB, NetEase, Kugou (тексты с таймингами строк) и Genius (текст без таймингов).
- * Выбор: сначала текст с таймингами (LRCLIB → NetEase → Kugou), иначе без них (Genius → LRCLIB → остальные).
+ * Looks up ready lyrics in all sources at once (in parallel, no longer than ALL_DEADLINE_MS):
+ * LRCLIB, NetEase, Kugou (lyrics with line timings) and Genius (lyrics without timings).
+ * Choice: timed lyrics first (LRCLIB → NetEase → Kugou), otherwise untimed ones (Genius → LRCLIB → the rest).
  */
 export async function findLyrics(meta: TrackMeta, url: string | null): Promise<CachedResult | null> {
   const candidates = guessArtistTrack(meta.title, meta.uploader).slice(0, 2);
@@ -149,14 +149,14 @@ export async function findLyrics(meta: TrackMeta, url: string | null): Promise<C
       lrclibDone = true;
       const idx = res.findIndex((r) => r !== null);
       if (idx >= 0) lrc = { rec: res[idx]!, artist: candidates[idx]?.artist || meta.uploader || '' };
-      if (lrclibUp && answered === 0) lrclibDownUntil = Date.now() + DOWN_PAUSE_MS; // сервис не отвечает вовсе
-      providerLog.push(`LRCLIB: ${lrc ? (lrc.rec.syncedLyrics ? 'найден с таймингами' : 'найден без таймингов') : lrclibUp ? 'не найден' : 'пропущен (не отвечал)'}`);
-      if (lrc?.rec.syncedLyrics || lrc?.rec.instrumental) resolveSynced(); // лучше уже не будет — не ждём остальных
+      if (lrclibUp && answered === 0) lrclibDownUntil = Date.now() + DOWN_PAUSE_MS; // the service doesn't answer at all
+      providerLog.push(`LRCLIB: ${lrc ? (lrc.rec.syncedLyrics ? 'found, timed' : 'found, untimed') : lrclibUp ? 'not found' : 'skipped (not answering)'}`);
+      if (lrc?.rec.syncedLyrics || lrc?.rec.instrumental) resolveSynced(); // it won't get any better - don't wait for the rest
     },
   );
   const tasks = [genius(want), netease(want), kugou(want)].map((p) => p.then((h) => h && extra.push(h)));
   await Promise.race([Promise.all([lrclibTask, ...tasks]), syncedFromLrclib, sleep(ALL_DEADLINE_MS)]);
-  if (!lrclibDone) providerLog.push('LRCLIB: не успел ответить');
+  if (!lrclibDone) providerLog.push('LRCLIB: did not answer in time');
 
   const base = { url, title: meta.title, artwork: meta.artwork, createdAt: Date.now() };
   const found = lrc as { rec: LrcRecord; artist: string } | null;
@@ -183,11 +183,11 @@ export async function findLyrics(meta: TrackMeta, url: string | null): Promise<C
   return null;
 }
 
-/** Сохраняет текст трека в общий кэш (его же использует караоке). */
+/** Saves the track's lyrics into the shared cache (karaoke uses it too). */
 export async function saveFound(path: string, result: CachedResult, setLast: boolean) {
   const r = await chrome.storage.local.get('results');
   const all = (r.results as Record<string, CachedResult> | undefined) ?? {};
-  if (all[trackKey(path)]?.pinned) return; // закреплённый пользователем текст не трогаем
+  if (all[trackKey(path)]?.pinned) return; // lyrics pinned by the user are left alone
   all[trackKey(path)] = result;
   await chrome.storage.local.set({ results: pruneCache(all), ...(setLast ? { lastResult: result } : {}) });
 }

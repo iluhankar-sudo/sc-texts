@@ -1,9 +1,9 @@
-/** Разбор ссылки на трек SoundCloud. */
+/** Parsing SoundCloud track links. */
 
 export interface TrackLink {
-  /** Нормализованный адрес, который открываем во вкладке. */
+  /** Normalized URL that we open in the tab. */
   url: string;
-  /** Путь трека в нижнем регистре (/artist/track) или null для коротких ссылок on.soundcloud.com. */
+  /** Lowercase track path (/artist/track), or null for on.soundcloud.com short links. */
   path: string | null;
 }
 
@@ -32,22 +32,22 @@ export function parseTrackUrl(input: string): TrackLink | null {
   return { url: `https://soundcloud.com/${artist}/${track}`, path: `/${artist}/${track}`.toLowerCase() };
 }
 
-/** Тот ли трек играет в плеере (trackId — путь из плеера, может содержать хвост). */
+/** Whether this track is playing in the player (trackId is the player's path, may have a tail). */
 export function isSameTrack(trackId: string | null, path: string | null): boolean {
   if (!trackId) return false;
-  if (!path) return true; // короткая ссылка: путь заранее неизвестен
+  if (!path) return true; // short link: the path isn't known in advance
   const t = trackId.toLowerCase().replace(/\/+$/, '');
   if (t === path || t.startsWith(`${path}/`)) return true;
-  // SoundCloud иногда показывает в нижнем плеере «/undefined/название-трека» (имя исполнителя
-  // ещё не подгрузилось) — тогда сверяем только название трека.
+  // SoundCloud sometimes shows "/undefined/track-name" in the bottom player (the artist name
+  // hasn't loaded yet) - then compare only the track name.
   const [, artist, track] = t.split('/');
   const [, wantArtist, wantTrack] = path.split('/');
   return (artist === 'undefined' || artist === '') && !!track && track === wantTrack && !!wantArtist;
 }
 
 /**
- * Адрес трека со страницы, на которую ведёт короткая ссылка (если перенаправление не дало его сразу):
- * <link rel="canonical"> или <meta property="og:url">.
+ * Track URL from the page a short link leads to (if the redirect didn't give it right away):
+ * <link rel="canonical"> or <meta property="og:url">.
  */
 export function trackUrlFromHtml(html: string): TrackLink | null {
   const m =

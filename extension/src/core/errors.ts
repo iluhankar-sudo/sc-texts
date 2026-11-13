@@ -1,10 +1,10 @@
-/** Разбор ошибок chrome.tabCapture. */
+/** Classifying chrome.tabCapture errors. */
 export type CaptureErrorKind = 'busy' | 'notAllowed' | 'other';
 
 /**
- * busy — вкладку уже записывает кто-то ещё (демонстрация экрана «вкладка Chrome»,
- * другое расширение или наш прошлый захват): Chrome не даёт записывать вкладку дважды.
- * notAllowed — служебная страница Chrome или расширение не вызвано на этой вкладке.
+ * busy - someone else is already recording the tab (screen sharing of a "Chrome tab",
+ * another extension or our previous capture): Chrome doesn't allow recording a tab twice.
+ * notAllowed - a Chrome internal page, or the extension wasn't invoked on this tab.
  */
 export function classifyCaptureError(err: unknown): CaptureErrorKind {
   const text = String((err as { message?: string })?.message ?? err);

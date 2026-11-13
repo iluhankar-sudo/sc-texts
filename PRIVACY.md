@@ -31,9 +31,3 @@ Requests to the services listed above are subject to their own privacy policies.
 ## Contact
 
 Questions about this policy: open an issue at https://github.com/iluhankar-sudo/sc-texts/issues
-
----
-
-# sc texts — Политика конфиденциальности (кратко)
-
-Расширение не собирает личные данные, не использует аналитику и рекламу. Название и исполнитель трека отправляются в базы текстов песен (LRCLIB, Genius, NetEase, Kugou). Звук вкладки — только после нажатия пользователем — отправляется на распознавание (через прокси расширения в Groq или напрямую в выбранный сервис, если указан свой ключ) и не сохраняется. Настройки и тексты хранятся только в браузере пользователя.

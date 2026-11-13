@@ -57,7 +57,7 @@ test('cleanSegments drops junk, silence and empty; runs filtered', () => {
 test('mergeChunk stitches overlapping windows without gaps or duplicates', () => {
   const edge = 1.5;
   const r1 = mergeChunk([], [line(1, 3, 'a'), line(5, 7, 'b'), line(8, 10, 'c')], { start: 0, end: 10 }, { edge, first: true, last: false });
-  assert.deepEqual(r1.lines.map((l) => l.text), ['a', 'b']); // 'c' в ненадёжном хвосте
+  assert.deepEqual(r1.lines.map((l) => l.text), ['a', 'b']); // 'c' is in the untrusted tail
   const r2 = mergeChunk(r1.lines, [line(8.1, 10.2, 'c'), line(11, 13, 'd'), line(15.5, 17, 'e')], { start: 7, end: 17 }, { edge, first: false, last: false });
   assert.deepEqual(r2.lines.map((l) => l.text), ['a', 'b', 'c', 'd']);
   const r3 = mergeChunk(r2.lines, [line(15.2, 17, 'e')], { start: 14, end: 17 }, { edge, first: false, last: true });
@@ -88,8 +88,8 @@ test('activeIndex / upcomingIndex / wordIndex', () => {
   const ls = [line(10, 12, 'a'), line(14, 16, 'b')];
   assert.equal(activeIndex(ls, 5), -1);
   assert.equal(activeIndex(ls, 11), 0);
-  assert.equal(activeIndex(ls, 13), 0); // удержание 1.5 c
-  assert.equal(activeIndex(ls, 13.6), -1); // пауза между строками
+  assert.equal(activeIndex(ls, 13), 0); // held for 1.5 s
+  assert.equal(activeIndex(ls, 13.6), -1); // pause between lines
   assert.equal(activeIndex(ls, 14.1), 1);
   assert.equal(activeIndex(ls, 30), -1);
   assert.equal(upcomingIndex(ls, 13), 1);
@@ -103,7 +103,7 @@ test('activeIndex / upcomingIndex / wordIndex', () => {
 test('PlaybackClock: tick anchoring, pause, seek, history', () => {
   const clock = new PlaybackClock();
   let ev = 'none';
-  // играет с позиции 10.0 в момент wall=0, плеер показывает целые секунды
+  // playing from position 10.0 at wall=0, the player shows whole seconds
   for (let t = 0; t <= 5000; t += 100) {
     const e = clock.update(Math.floor(10 + t / 1000), true, t);
     if (e !== 'none') ev = e;
@@ -120,7 +120,7 @@ test('PlaybackClock: tick anchoring, pause, seek, history', () => {
   assert.equal(clock.update(15, true, 9100), 'play');
   assert.equal(clock.update(60, true, 9200), 'seek');
   assert.ok(Math.abs(clock.now(9200) - 60.5) < 1e-9);
-  // прошлое по-прежнему доступно
+  // the past is still available
   assert.ok(Math.abs(clock.positionAt(3000)! - 13) < 0.15);
 });
 
@@ -170,7 +170,7 @@ test('isSameTrack', () => {
   assert.ok(isSameTrack('/Artist/My-Track', '/artist/my-track'));
   assert.ok(isSameTrack('/artist/my-track/', '/artist/my-track'));
   assert.ok(!isSameTrack('/artist/my-track-2', '/artist/my-track'));
-  assert.ok(isSameTrack('/undefined/my-track', '/artist/my-track')); // исполнитель ещё не подгрузился
+  assert.ok(isSameTrack('/undefined/my-track', '/artist/my-track')); // the artist hasn't loaded yet
   assert.ok(!isSameTrack('/other/my-track', '/artist/my-track'));
   assert.ok(!isSameTrack('/undefined/other-track', '/artist/my-track'));
   assert.ok(isSameTrack('/x/y', null));
@@ -230,7 +230,7 @@ import { cleanTitle, guessArtistTrack, parseLrc, pickBest } from '../src/core/ly
 test('parseLrc', () => {
   const lines = parseLrc('[ar:Test]\n[00:12.50] Первая строка\n[00:15.00]\n[00:16.20]Вторая строка\n[00:20.00][01:05.00] Припев');
   assert.deepEqual(lines.map((l) => [l.start, l.text]), [[12.5, 'Первая строка'], [16.2, 'Вторая строка'], [20, 'Припев'], [65, 'Припев']]);
-  assert.equal(lines[0]!.end, 15); // конец = начало следующей отметки (пустая строка — пауза)
+  assert.equal(lines[0]!.end, 15); // end = the next mark's start (an empty line is a pause)
 });
 
 test('cleanTitle / guessArtistTrack', () => {
@@ -273,7 +273,7 @@ test('PlaybackClock with rate and exact time', () => {
   c.setRate(3, 0);
   assert.equal(c.updateExact(10, true, 0), 'none');
   for (let w = 100; w <= 2000; w += 100) assert.equal(c.updateExact(10 + (w / 1000) * 3, true, w), 'none');
-  // ×3: за 1 секунду реального времени трек сдвигается на 3 секунды
+  // x3: in 1 second of real time the track moves by 3 seconds
   assert.ok(Math.abs(c.positionAt(1000)! - 13) < 0.05, String(c.positionAt(1000)));
   assert.ok(Math.abs(c.now(2500) - 17.5) < 0.05);
   assert.equal(c.updateExact(50, true, 2600), 'seek');
@@ -284,8 +284,8 @@ test('PlaybackClock with rate and exact time', () => {
 import { toMono16k as resample } from '../src/core/audio.ts';
 
 test('stretching sped-up capture restores original duration', () => {
-  // 1 секунда трека, сыгранная на ×3 и захваченная на 48 кГц = 16000 сэмплов;
-  // при частоте 48000/3 они дают ровно 1 секунду звука для распознавания.
+  // 1 second of track played at x3 and captured at 48 kHz = 16000 samples;
+  // at a rate of 48000/3 they make exactly 1 second of audio for recognition.
   const captured = new Float32Array(16000).fill(0.25);
   assert.equal(resample(captured, 48000 / 3).length, 16000);
 });
@@ -293,10 +293,10 @@ test('stretching sped-up capture restores original duration', () => {
 import { pickSpeed, windowFor } from '../src/core/speed.ts';
 
 test('pickSpeed auto: accuracy first, caps at x3', () => {
-  assert.equal(pickSpeed(0, 210), 3); // 3:30 → ×3 → 70 с
+  assert.equal(pickSpeed(0, 210), 3); // 3:30 → x3 → 70 s
   assert.equal(pickSpeed(0, 60), 2.5); // 1:00 → ×2.4 → ×2.5
-  assert.equal(pickSpeed(0, 40), 2); // короткий трек: минимум ×2
-  assert.equal(pickSpeed(0, 300), 3); // длинный: не выше ×3
+  assert.equal(pickSpeed(0, 40), 2); // short track: at least x2
+  assert.equal(pickSpeed(0, 300), 3); // long one: no higher than x3
   assert.equal(pickSpeed(0, null), 3);
   assert.equal(pickSpeed(8, 200), 8);
   assert.equal(pickSpeed(1, 200), 1);
@@ -311,7 +311,7 @@ test('firstNonSilent finds where the track starts', () => {
   assert.equal(firstNonSilent(b), -1);
   b[37] = 0.01;
   assert.equal(firstNonSilent(b), 37);
-  b[10] = 0.00001; // шум ниже порога
+  b[10] = 0.00001; // noise below the threshold
   assert.equal(firstNonSilent(b), 37);
 });
 
@@ -323,7 +323,7 @@ test('hallucination filter uses model confidence', () => {
   assert.equal(isHallucination(seg('Ветер поёт в проводах', { avg_logprob: -0.3 }), 'Ветер поёт в проводах'), false);
   assert.equal(isHallucination(seg('Some random words here', { avg_logprob: -1.3 }), 'Some random words here'), true);
   assert.equal(isHallucination(seg('Here!', { avg_logprob: -0.7 }), 'Here!'), true);
-  assert.equal(isHallucination(seg('Привет', { avg_logprob: -0.2 }), 'Привет'), false); // уверенное короткое — оставляем
+  assert.equal(isHallucination(seg('Привет', { avg_logprob: -0.2 }), 'Привет'), false); // a confident short line is kept
   assert.equal(isHallucination(seg('la la la la la la', { avg_logprob: -0.3, compression_ratio: 3.1 }), 'la la la la la la'), true);
   assert.equal(isHallucination(seg('text', { no_speech_prob: 0.9, avg_logprob: -0.7 }), 'text'), true);
   assert.equal(isHallucination(seg('без оценок', { no_speech_prob: 0.2 }), 'без оценок'), false);
@@ -354,8 +354,8 @@ test('LLM correction keeps timings, drops junk, rejects bad answers', () => {
     JSON.stringify({ lines: [{ text: 'Огни вечернего города' }, { text: 'Ветер поёт в проводах.' }, { text: '', drop: true }] }),
   )!;
   assert.deepEqual(ok.map((l) => [l.start, l.text]), [[12, 'Огни вечернего города'], [20, 'Ветер поёт в проводах.']]);
-  assert.equal(ok[1]!.words.length, 1); // по сути не изменилась — слова сохранены
-  assert.equal(applyCorrection(lines, JSON.stringify({ lines: [{ text: 'x' }] })), null); // другое число строк
+  assert.equal(ok[1]!.words.length, 1); // essentially unchanged - words are kept
+  assert.equal(applyCorrection(lines, JSON.stringify({ lines: [{ text: 'x' }] })), null); // a different number of lines
   assert.equal(applyCorrection(lines, 'not json'), null);
   const many = Array.from({ length: 5 }, (_, i) => ({ start: i, end: i + 1, text: `строка ${i}`, words: [] }));
   assert.equal(applyCorrection(many, JSON.stringify({ lines: many.map(() => ({ drop: true })) })), null);
@@ -439,7 +439,7 @@ test('positionAt extrapolates slightly before the first anchor', () => {
   c.setRate(2, 10000);
   c.updateExact(0.5, true, 10000);
   assert.ok(Math.abs(c.positionAt(9900)! - 0.4) < 0.11);
-  assert.equal(c.positionAt(5000), null); // слишком давно — неизвестно
+  assert.equal(c.positionAt(5000), null); // too long ago - unknown
 });
 
 import { dropTitleEcho, isTitleEcho } from '../src/core/filter.ts';
@@ -451,7 +451,7 @@ test('title/artist mentions are removed, a sung chorus with the title is kept', 
   assert.equal(isTitleEcho('Test Artist', hint), true);
   assert.equal(isTitleEcho('Мы едем в night drive до утра', hint), false);
   const L = (text: string) => ({ start: 0, end: 1, text, words: [] });
-  // Одиночная строка-название — убираем; повторяющаяся (припев) — оставляем.
+  // A lone title line is removed; a repeating one (chorus) is kept.
   assert.deepEqual(dropTitleEcho([L('Night Drive'), L('Огни за окном'), L('Дорога в ночь')], hint).map((l) => l.text), ['Огни за окном', 'Дорога в ночь']);
   assert.equal(dropTitleEcho([L('Night drive!'), L('Огни за окном'), L('Night drive!')], hint).length, 3);
 });
@@ -462,8 +462,8 @@ test('highPass removes bass and keeps voice band', () => {
   const sr = 16000;
   const tone = (f: number) => Float32Array.from({ length: sr }, (_, i) => Math.sin((2 * Math.PI * f * i) / sr));
   const rms = (x: Float32Array) => Math.sqrt(x.slice(sr / 2).reduce((s, v) => s + v * v, 0) / (sr / 2));
-  assert.ok(rms(highPass(tone(40), sr, 120)) < 0.15); // бочка/бас: −17 дБ и больше
-  assert.ok(rms(highPass(tone(1000), sr, 120)) > 0.69); // голос: почти без изменений
+  assert.ok(rms(highPass(tone(40), sr, 120)) < 0.15); // kick/bass: -17 dB or more
+  assert.ok(rms(highPass(tone(1000), sr, 120)) > 0.69); // voice: almost unchanged
 });
 
 test('toAsrPcm normalizes quiet audio but limits gain', () => {
@@ -481,9 +481,9 @@ import { alignLyrics } from '../src/core/align.ts';
 
 test('strictMatch: title must match, artist or duration confirms; Cyrillic ↔ Latin', () => {
   assert.ok(strictMatch({ title: 'Ночной город', artist: 'Тестер' }, { title: 'Ночной город', artist: 'Тестер' }) > 0);
-  assert.ok(strictMatch({ title: 'Ночной город', artist: 'Тестер' }, { title: 'Nochnoy gorod', artist: 'Tester' }) > 0); // транслит
+  assert.ok(strictMatch({ title: 'Ночной город', artist: 'Тестер' }, { title: 'Nochnoy gorod', artist: 'Tester' }) > 0); // transliteration
   assert.ok(strictMatch({ title: 'Song For Love (feat. Someone)', artist: 'okishslay3r' }, { title: 'Song for Love', artist: 'Okishslay3r & Someone' }) > 0);
-  assert.equal(strictMatch({ title: 'Ночной город', artist: 'Тестер' }, { title: 'Ночной город', artist: 'Другой' }), 0); // чужой исполнитель
+  assert.equal(strictMatch({ title: 'Ночной город', artist: 'Тестер' }, { title: 'Ночной город', artist: 'Другой' }), 0); // a different artist
   assert.ok(strictMatch({ title: 'Ночной город', artist: 'Тестер', duration: 200 }, { title: 'Ночной город', artist: 'Другой', duration: 202 }) > 0);
   assert.equal(strictMatch({ title: 'Ночной город', artist: 'Тестер' }, { title: 'Дневной лес', artist: 'Тестер' }), 0);
   assert.equal(normName('Ёлка (prod. X)'), 'elka');
@@ -493,7 +493,7 @@ test('Genius: hits and lyrics extraction', () => {
   const hits = geniusHits({ response: { sections: [{ hits: [{ result: { url: 'https://genius.com/Tester-nochnoy-gorod-lyrics', title: 'Ночной город', artist_names: 'Тестер' } }, { result: { url: 'https://genius.com/artists/Tester' } }] }] } });
   assert.equal(hits.length, 1);
   const html = '<div class="x"><div data-lyrics-container="true">[Куплет 1]<br/>Первая строка<br><a href="#">Вторая &amp; строка</a><div data-exclude-from-selection="true">ads</div></div></div><div data-lyrics-container="true">[Припев]<br>Третья строка</div>';
-  assert.equal(extractGeniusLyrics(html), 'Первая строка\nВторая & строка\n\nТретья строка'); // пустая строка — граница куплетов
+  assert.equal(extractGeniusLyrics(html), 'Первая строка\nВторая & строка\n\nТретья строка'); // an empty line is a verse boundary
 });
 
 test('NetEase and Kugou parsing', () => {
@@ -521,7 +521,7 @@ test('track meta from page HTML and from the link', () => {
 
 test('alignLyrics: real lyrics get timings from recognition', () => {
   const ref = ['Огни ночного города горят', 'Я еду сквозь туман один', 'Новая строка без пары', 'И снова утро впереди'];
-  // распознавание с ошибками: «горять», пропущено слово, «щас» и т.п.; третьей строки модель не услышала
+  // recognition with errors: "горять", a missing word, "щас" etc.; the model didn't hear the third line
   const w = (word: string, start: number) => ({ word, start, end: start + 0.4, prob: 0.9 });
   const rec = [
     { start: 10, end: 12, text: 'огни ночного города горять', words: [w('огни', 10), w('ночного', 10.5), w('города', 11), w('горять', 11.5)] },
@@ -530,13 +530,13 @@ test('alignLyrics: real lyrics get timings from recognition', () => {
   ];
   const al = alignLyrics(ref, rec)!;
   assert.ok(al && al.matched > 0.6, `matched ${al?.matched}`);
-  assert.deepEqual(al.lines.map((l) => l.text), ref); // текст — из готового источника
+  assert.deepEqual(al.lines.map((l) => l.text), ref); // the text comes from the ready source
   assert.ok(Math.abs(al.lines[0]!.start - 10) < 0.01);
   assert.ok(Math.abs(al.lines[1]!.start - 14) < 0.01);
-  assert.ok(al.lines[2]!.start >= al.lines[1]!.end - 0.01 && al.lines[2]!.end <= 22.01); // между соседями
+  assert.ok(al.lines[2]!.start >= al.lines[1]!.end - 0.01 && al.lines[2]!.end <= 22.01); // between the neighbours
   assert.ok(Math.abs(al.lines[3]!.start - 22) < 0.01);
   assert.equal(al.lines[0]!.words!.length, 4);
-  // чужая песня — не подгоняем
+  // a different song - don't fit it
   assert.equal(alignLyrics(['совсем другие слова здесь'], rec), null);
 });
 
@@ -548,13 +548,13 @@ test('groqEndpoint: own key goes direct, no key and no proxy → null', () => {
     headers: { Authorization: 'Bearer gsk_x' },
     viaProxy: false,
   });
-  assert.equal(groqEndpoint({ apiUrl: 'https://api.groq.com/openai/v1', apiKey: '' }), null); // в тестах посредник не вшит
+  assert.equal(groqEndpoint({ apiUrl: 'https://api.groq.com/openai/v1', apiKey: '' }), null); // the proxy isn't embedded in tests
 });
 
 test('pruneCache keeps pinned lyrics beyond the limit', () => {
   const map: Record<string, { createdAt: number; pinned?: boolean }> = {};
   for (let i = 0; i < 10; i++) map[`t${i}`] = { createdAt: i };
-  map.t0!.pinned = true; // самый старый, но закреплён
+  map.t0!.pinned = true; // the oldest, but pinned
   const out = pruneCache(map, 3);
   assert.deepEqual(Object.keys(out).sort(), ['t0', 't7', 't8', 't9']);
 });
@@ -566,12 +566,12 @@ test('estimateTimings spreads lines over the track with intro/outro padding', ()
   assert.equal(l.length, 3);
   assert.ok(l[0]!.start >= 3 && l[0]!.start <= 15);
   assert.ok(l[2]!.end <= 200 - 3);
-  assert.ok(l[1]!.end - l[1]!.start > l[0]!.end - l[0]!.start); // длиннее строка — дольше
+  assert.ok(l[1]!.end - l[1]!.start > l[0]!.end - l[0]!.start); // a longer line lasts longer
   for (let i = 1; i < l.length; i++) assert.ok(l[i]!.start >= l[i - 1]!.end);
   assert.deepEqual(estimateTimings(['a'], 0), []);
 });
 
-test('trackUrlFromHtml: адрес трека из страницы короткой ссылки', async () => {
+test('trackUrlFromHtml: track URL from the short link page', async () => {
   const { trackUrlFromHtml } = await import('../src/core/link.ts');
   assert.deepEqual(trackUrlFromHtml('<head><link rel="canonical" href="https://soundcloud.com/Artist/Song-Name"></head>'), {
     url: 'https://soundcloud.com/Artist/Song-Name',
@@ -581,20 +581,20 @@ test('trackUrlFromHtml: адрес трека из страницы коротк
   assert.equal(trackUrlFromHtml('<html>no</html>'), null);
 });
 
-test('tightenStart: строка начинается с голоса, а не с проигрыша', async () => {
+test('tightenStart: a line starts at the voice, not at the intro', async () => {
   const { tightenStart } = await import('../src/core/filter.ts');
   const w = (word: string, start: number, end: number) => ({ word, start, end, prob: 1 });
-  // Первое слово «растянуто» на 8 секунд проигрыша.
+  // The first word is "stretched" over 8 seconds of intro.
   const l = tightenStart({ start: 0, end: 10, text: 'Я иду домой', words: [w('Я', 0, 8.2), w('иду', 8.3, 8.6), w('домой', 8.6, 9.2)] });
   assert.ok(l.start > 7.5 && l.start < 8.2, String(l.start));
-  // Сегмент начался раньше первого слова — начало по первому слову.
+  // The segment started before the first word - the start follows the first word.
   assert.equal(tightenStart({ start: 2, end: 6, text: 'да', words: [w('да', 4, 4.3)] }).start, 4);
-  // Нормальная строка не меняется.
+  // A normal line doesn't change.
   const ok = { start: 1, end: 3, text: 'ok go', words: [w('ok', 1, 1.3), w('go', 1.4, 1.8)] };
   assert.equal(tightenStart(ok), ok);
 });
 
-test('retimeEdited: правка текста сохраняет тайминги', async () => {
+test('retimeEdited: editing lyrics keeps the timings', async () => {
   const { retimeEdited, editorLines } = await import('../src/core/edit.ts');
   const w = (word: string, start: number, end: number) => ({ word, start, end, prob: 1 });
   const old = [
@@ -603,18 +603,18 @@ test('retimeEdited: правка текста сохраняет тайминг�
     { start: 7, end: 9, text: 'и не смотрю назад', words: [w('и', 7, 7.1), w('не', 7.2, 7.4), w('смотрю', 7.5, 8), w('назад', 8.1, 8.6)] },
   ];
   assert.deepEqual(editorLines('  Я иду домой \n\n по ночной   Москве\n'), ['Я иду домой', 'по ночной Москве']);
-  // То же число строк — время строк не меняется, неизменённая строка — та же.
+  // Same number of lines - line times don't change, an unchanged line stays the same.
   const same = retimeEdited(old, ['Я иду домой', 'по ночной Москве', 'и не смотрю назад']);
   assert.deepEqual(same.map((l) => [l.start, l.end]), [[1, 3], [4, 6], [7, 9]]);
   assert.equal(same[2], old[2]);
-  assert.equal(same[1]!.words![2]!.start, 5); // слово на месте — своё время
-  // Строки объединили — время по словам.
+  assert.equal(same[1]!.words![2]!.start, 5); // a word in place keeps its time
+  // Lines were merged - timing by words.
   const merged = retimeEdited(old, ['я иду до мой по ночной москве', 'и не смотрю назад']);
   assert.equal(merged.length, 2);
   assert.ok(Math.abs(merged[0]!.start - 1) < 0.01 && Math.abs(merged[1]!.start - 7) < 0.01);
 });
 
-test('reconcileChorus: припев сводится по повторам', async () => {
+test('reconcileChorus: the chorus is reconciled across repeats', async () => {
   const { reconcileChorus } = await import('../src/core/chorus.ts');
   let t = 0;
   const L = (text: string, probs?: number[]) => {
@@ -627,38 +627,38 @@ test('reconcileChorus: припев сводится по повторам', asy
   const lines = [
     L('Я выхожу из дома рано'),
     L('Город ещё спит'),
-    L('Мы летим над ночной Москвой'), // припев 1
+    L('Мы летим над ночной Москвой'), // chorus 1
     L('И никто не знает куда'),
     L('Второй куплет совсем другой'),
     L('Про что-то своё'),
-    L('Мы летим над ночной Масквой', [0.9, 0.9, 0.9, 0.9, 0.3]), // припев 2 — ошибка
+    L('Мы летим над ночной Масквой', [0.9, 0.9, 0.9, 0.9, 0.3]), // chorus 2 - with an error
     L('И никто не знает куда'),
-    L('Мы летим над ночной Москвой'), // припев 3
+    L('Мы летим над ночной Москвой'), // chorus 3
     L('И никто не знает когда', [0.9, 0.9, 0.9, 0.9, 0.2]),
   ];
   const r = reconcileChorus(lines);
   assert.equal(r.lines[6]!.text, 'Мы летим над ночной Москвой');
   assert.equal(r.lines[9]!.text, 'И никто не знает куда');
-  assert.equal(r.lines[6]!.start, lines[6]!.start); // время своё
-  assert.equal(r.lines[0]!.text, lines[0]!.text); // куплет не тронут
+  assert.equal(r.lines[6]!.start, lines[6]!.start); // its own timing
+  assert.equal(r.lines[0]!.text, lines[0]!.text); // the verse is untouched
   assert.equal(r.lines[4]!.text, lines[4]!.text);
   assert.equal(r.fixed, 2);
   assert.ok(r.lines[2]!.chorus && r.lines[6]!.chorus && !r.lines[0]!.chorus);
   assert.equal(r.lines[6]!.raw, 'Мы летим над ночной Масквой');
-  // Повторная сверка (после следующего куска) не «накапливает» исправления: голосуют исходные тексты.
+  // Re-checking (after the next chunk) doesn't "accumulate" fixes: the original texts vote.
   const again = reconcileChorus(r.lines);
   assert.deepEqual(again.lines.map((l) => l.text), r.lines.map((l) => l.text));
-  // Ничья из двух повторов решается уверенностью модели в строке.
+  // A tie between two repeats is broken by the model's confidence in the line.
   t = 0;
   const conf = [L('Мы летим над ночной Москвой'), L('И никто не знает куда'), L('Куплет'), L('Ещё куплет тут'), L('Мы летим над ночной Масквой'), L('И никто не знает куда')];
   conf[0] = { ...conf[0]!, words: conf[0]!.words.map((w) => ({ ...w, prob: 1 })), conf: 0.9 };
   conf[4] = { ...conf[4]!, words: conf[4]!.words.map((w) => ({ ...w, prob: 1 })), conf: 0.5 };
   assert.equal(reconcileChorus(conf).lines[4]!.text, 'Мы летим над ночной Москвой');
-  // Два повтора с разными словами — неизвестно, какой верный: не трогаем.
+  // Two repeats with different words - we can't know which is right: leave them.
   t = 0;
   const two = [L('Мы летим над ночной Москвой'), L('И никто не знает куда'), L('Куплет'), L('Ещё куплет тут'), L('Мы летим над ночной Масквой'), L('И никто не знает куда')];
   assert.equal(reconcileChorus(two).fixed, 0);
-  // Одна случайно похожая строка без соседей-повторов — не припев.
+  // A single coincidentally similar line without repeating neighbours is not a chorus.
   t = 0;
   const lone = [L('Я иду домой один'), L('Что-то совсем другое тут'), L('Ещё одна строка'), L('Я иду домой одна')];
   assert.equal(reconcileChorus(lone).fixed, 0);

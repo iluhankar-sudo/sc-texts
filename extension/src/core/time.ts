@@ -1,4 +1,4 @@
-/** "1:23" → 83, "1:02:03" → 3723, иначе null. */
+/** "1:23" → 83, "1:02:03" → 3723, otherwise null. */
 export function parseClock(text: string | null | undefined): number | null {
   if (!text) return null;
   const m = /(\d+):(\d{2})(?::(\d{2}))?/.exec(text);

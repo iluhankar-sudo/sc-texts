@@ -1,25 +1,25 @@
 /**
- * Чтение состояния плеера SoundCloud из DOM.
- * ВАЖНО: вёрстка SoundCloud меняется без предупреждения. Все селекторы собраны здесь,
- * у каждого есть запасной вариант; при поломке правится только этот файл.
+ * Reading the SoundCloud player state from the DOM.
+ * IMPORTANT: SoundCloud's markup changes without notice. All selectors are collected here,
+ * each has a fallback; when something breaks, only this file needs fixing.
  */
 import { parseClock } from '../core/time.ts';
 import { readMedia } from './media.ts';
 
 export interface PlayerState {
-  /** Путь трека (например /artist/track) или null, если плеер пуст. */
+  /** Track path (e.g. /artist/track) or null if the player is empty. */
   trackId: string | null;
   title: string | null;
   artist: string | null;
-  /** URL обложки (увеличенной), если есть. */
+  /** Artwork URL (enlarged), if any. */
   artwork: string | null;
-  /** Целые секунды, как показывает плеер. */
+  /** Whole seconds, as shown by the player. */
   pos: number | null;
   duration: number | null;
   playing: boolean;
-  /** Точное время из медиа-элемента (секунды) или null, если его не видно. */
+  /** Exact time from the media element (seconds), or null if it isn't visible. */
   exact: number | null;
-  /** Фактическая скорость воспроизведения. */
+  /** Actual playback rate. */
   rate: number;
 }
 
@@ -32,16 +32,16 @@ export const SELECTORS = {
   playButton: '.playControls__play, .playControl',
   titleLink: '.playbackSoundBadge__titleLink',
   artistLink: '.playbackSoundBadge__lightLink',
-  /** Большая кнопка play на странице трека (несколько вариантов вёрстки). */
+  /** The big play button on the track page (several markup variants). */
   heroPlay:
     '.fullHero__playButton .sc-button-play, .fullHero__playButton button, .fullListenHero .sc-button-play, ' +
     '.listenHero .sc-button-play, .soundTitle__playButton .sc-button-play, .sc-button-play.sc-button-xlarge, ' +
     '.l-listen-hero .sc-button-play, .listenEngagement .sc-button-play, [class*="Hero"] .sc-button-play, [class*="hero"] button[aria-label*="Play" i]',
-  /** Кнопка play/pause в нижнем плеере. */
+  /** Play/pause button in the bottom player. */
   playControl: '.playControls__play, .playControl',
-  /** Где искать обложку играющего трека (любой элемент с картинкой внутри). */
+  /** Where to look for the playing track's artwork (any element with an image inside). */
   artworkRoots: '.playbackSoundBadge, .playControls__soundBadge, .playbackSoundBadge__avatar',
-  /** Обложка на странице трека (запасной вариант). */
+  /** Artwork on the track page (fallback). */
   heroArtwork: '.fullHero__artwork, .listenArtworkWrapper, .fullListenHero__artwork',
 } as const;
 
@@ -85,7 +85,7 @@ export function readPlayer(doc: Document = document): PlayerState {
   const artist = artistEl?.getAttribute('title') ?? artistEl?.textContent?.trim() ?? null;
 
   let artwork = findArtwork(doc, SELECTORS.artworkRoots);
-  // Запасной вариант: мы на странице этого трека — берём обложку со страницы или из og:image.
+  // Fallback: we're on this track's page - take the artwork from the page or og:image.
   const onTrackPage = !!trackId && doc.location?.pathname?.toLowerCase().replace(/\/+$/, '') === trackId.toLowerCase().replace(/\/+$/, '');
   if (!artwork && onTrackPage) {
     artwork =
@@ -93,7 +93,7 @@ export function readPlayer(doc: Document = document): PlayerState {
       artworkUrl(doc.querySelector('meta[property="og:image"]')?.getAttribute('content') ?? null);
   }
 
-  // Точное время — только для настоящей страницы (в тестах document подменён).
+  // Exact time only for the real page (document is mocked in tests).
   const media = doc === globalThis.document ? readMedia() : null;
   const exact = media && pos !== null && Math.abs(media.time - pos) < 3 ? media.time : null;
 
@@ -107,10 +107,10 @@ function clickFirst(selector: string, doc: Document): boolean {
   return true;
 }
 
-/** Нажать play на странице трека. */
+/** Press play on the track page. */
 export function clickHeroPlay(doc: Document = document): boolean {
   if (clickFirst(SELECTORS.heroPlay, doc)) return true;
-  // Вёрстка поменялась: первая видимая кнопка play на странице, не в нижнем плеере.
+  // The markup changed: the first visible play button on the page, not in the bottom player.
   const cands = Array.from(
     doc.querySelectorAll<HTMLElement>('.sc-button-play, button[aria-label="Play" i], button[title="Play" i], [role="button"][aria-label="Play" i]'),
   ).filter((el) => !el.closest('.playControls, .playControl, .playbackSoundBadge') && el.getClientRects().length > 0);
@@ -120,19 +120,19 @@ export function clickHeroPlay(doc: Document = document): boolean {
   return true;
 }
 
-/** Большая кнопка на странице трека показывает «пауза» — трек играет (или запускается). */
+/** The big button on the track page shows "pause" - the track is playing (or starting). */
 export function isHeroPlaying(doc: Document = document): boolean {
   const b = doc.querySelector(SELECTORS.heroPlay);
   const btn = (b?.closest('.sc-button-play') ?? b) as Element | null;
   return !!btn && (btn.classList.contains('sc-button-pause') || btn.classList.contains('playing'));
 }
 
-/** Нажать play/pause в нижнем плеере. */
+/** Press play/pause in the bottom player. */
 export function clickPlayControl(doc: Document = document): boolean {
   return clickFirst(SELECTORS.playControl, doc);
 }
 
-/** Достаёт адрес картинки SoundCloud из style="background-image: url(...)" или src и увеличивает её до 500×500. */
+/** Extracts a SoundCloud image URL from style="background-image: url(...)" or src and enlarges it to 500x500. */
 export function artworkUrl(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const m = /url\((?:&quot;|["'])?(.*?)(?:&quot;|["'])?\)/.exec(raw);
@@ -141,7 +141,7 @@ export function artworkUrl(raw: string | null | undefined): string | null {
   return url.replace(/-(?:large|t\d+x\d+|crop|small|badge|tiny|mini)\./, '-t500x500.');
 }
 
-/** Ищет первую картинку SoundCloud внутри указанных блоков. */
+/** Finds the first SoundCloud image inside the given blocks. */
 function findArtwork(doc: Document, rootsSelector: string): string | null {
   const roots = doc.querySelectorAll?.(rootsSelector) ?? [];
   for (const root of Array.from(roots)) {
@@ -159,8 +159,8 @@ function findArtwork(doc: Document, rootsSelector: string): string | null {
 }
 
 /**
- * Перемотка средствами SoundCloud: клик по полосе прогресса в нижнем плеере
- * (fraction — доля длительности, 0…1). Так плеер сам подгружает нужный кусок трека.
+ * Seeking with SoundCloud's own controls: a click on the progress bar in the bottom player
+ * (fraction - share of the duration, 0...1). This way the player loads the needed part itself.
  */
 export function seekViaUi(fraction: number, doc: Document = document): boolean {
   const bar = doc.querySelector(SELECTORS.progress) as HTMLElement | null;

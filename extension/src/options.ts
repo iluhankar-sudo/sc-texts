@@ -9,7 +9,7 @@ const el = (id: string) => document.getElementById(id) as HTMLInputElement;
 
 async function load() {
   const cfg = normalizeConfig(await chrome.storage.local.get(null));
-  // Своя модель (не из списка) — добавляем её в выпадающий список, чтобы не потерять.
+  // A custom model (not from the list) - add it to the dropdown so it isn't lost.
   const sel = document.getElementById('apiModel') as HTMLSelectElement;
   if (![...sel.options].some((o) => o.value === cfg.apiModel)) sel.add(new Option(cfg.apiModel, cfg.apiModel));
   for (const id of ids) el(id).value = String(cfg[id]);
@@ -27,12 +27,12 @@ async function save() {
 }
 
 document.getElementById('save')!.addEventListener('click', () => {
-  // AudioShake отдаёт результат ссылками на своё хранилище — просим доступ сразу в обработчике клика.
+  // AudioShake returns results as links to its storage - ask for access right in the click handler.
   if (el('audioshakeKey').value.trim()) chrome.permissions?.request({ origins: ['https://*/*'] }).catch(() => {});
   void save();
 });
 
-// Отчёт для разработчика: журнал последнего распознавания + настройки без ключей.
+// Developer report: the last recognition's log + settings without keys.
 document.getElementById('report')!.addEventListener('click', async () => {
   const all = await chrome.storage.local.get(null);
   const msg = document.getElementById('reportMsg')!;
@@ -42,12 +42,12 @@ document.getElementById('report')!.addEventListener('click', async () => {
     return;
   }
   const cfg = normalizeConfig(all) as unknown as Record<string, unknown>;
-  for (const k of ['apiKey', 'elevenKey', 'audioshakeKey', 'openaiKey', 'deepseekKey']) cfg[k] = cfg[k] ? '(задан)' : '(нет)';
+  for (const k of ['apiKey', 'elevenKey', 'audioshakeKey', 'openaiKey', 'deepseekKey']) cfg[k] = cfg[k] ? '(set)' : '(none)';
   const text = [
     `sc texts ${chrome.runtime.getManifest().version} · ${navigator.userAgent}`,
-    `настройки: ${JSON.stringify(cfg)}`,
+    `settings: ${JSON.stringify(cfg)}`,
     typeof all.lookupLog === 'string' ? all.lookupLog : '',
-    '--- журнал ---',
+    '--- log ---',
     log,
   ].join('\n');
   try {

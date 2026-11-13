@@ -1,39 +1,33 @@
-# Сервер-посредник sc texts
+# sc texts proxy
 
-Маленький Cloudflare Worker: держит ключ Groq у себя и пересылает в Groq запросы расширения
-(распознавание звука и запасной перевод). Благодаря ему расширение работает у других людей
-без своего ключа, а ваш ключ никто не видит.
+A small Cloudflare Worker that keeps the Groq key server-side and forwards the extension's requests to Groq (speech recognition, translation and lyrics correction). Thanks to it the extension works for other people without their own key, and nobody sees your key.
 
-## Как он защищает ваши лимиты
+## How it protects your limits
 
-- пересылает только распознавание (`/v1/audio/transcriptions`) и перевод (`/v1/chat/completions`);
-- только разрешённые модели (`ALLOWED_TRANSCRIBE_MODELS`, `ALLOWED_CHAT_MODELS` в `wrangler.toml`);
-- звук не больше 25 МБ, ответ перевода не длиннее 4000 токенов;
-- не больше 40 запросов в минуту с одного адреса (`[[ratelimits]]` в `wrangler.toml`);
-- если задан секрет `APP_TOKEN`, запросы без него отклоняются. Это защита от случайных посетителей:
-  токен вшит в расширение, и при желании его можно оттуда достать.
+- forwards only recognition (`/v1/audio/transcriptions`) and chat (`/v1/chat/completions`);
+- only allowed models (`ALLOWED_TRANSCRIBE_MODELS`, `ALLOWED_CHAT_MODELS` in `wrangler.toml`);
+- audio up to 25 MB, chat replies up to 4000 tokens;
+- at most 40 requests per minute from one address (`[[ratelimits]]` in `wrangler.toml`);
+- if the `APP_TOKEN` secret is set, requests without it are rejected. This only stops casual visitors: the token is embedded in the extension and can be extracted from it.
 
-Лимиты Groq у всех пользователей посредника общие — ваши. Бесплатного плана хватит на несколько
-человек; если пользователей станет много, Groq начнёт отвечать «слишком много запросов».
+All proxy users share your Groq limits. The free plan is enough for a few people; with many users Groq will start answering "too many requests".
 
-## Развёртывание автоматически (GitHub Actions)
+## Automatic deployment (GitHub Actions)
 
-В репозитории: Settings → Secrets and variables → Actions → New repository secret:
+In the repository: Settings → Secrets and variables → Actions → New repository secret:
 
-| Секрет | Что это |
+| Secret | What it is |
 |---|---|
-| `GROQ_KEY` | ключ Groq (console.groq.com → API Keys) |
-| `CLOUDFLARE_API_TOKEN` | dash.cloudflare.com → My Profile → API Tokens → Create Token → шаблон «Edit Cloudflare Workers» |
-| `CLOUDFLARE_ACCOUNT_ID` | dash.cloudflare.com → Workers & Pages → справа «Account ID» |
-| `APP_TOKEN` | необязательно: любая длинная строка |
+| `GROQ_KEY` | Groq API key (console.groq.com → API Keys) |
+| `CLOUDFLARE_API_TOKEN` | dash.cloudflare.com → My Profile → API Tokens → Create Token → "Edit Cloudflare Workers" template |
+| `CLOUDFLARE_ACCOUNT_ID` | dash.cloudflare.com → Workers & Pages → "Account ID" on the right |
+| `APP_TOKEN` | optional: any long string |
 
-После следующего push в `master` (или Actions → «Сборка и выпуск» → Run workflow) посредник
-развернётся сам, а его адрес вшьётся в сборку расширения в Releases.
+After the next push to `master` (or Actions → "Build and release" → Run workflow) the proxy deploys itself and its URL is embedded in the extension build in Releases.
 
-Перед первым развёртыванием откройте в Cloudflare раздел Workers & Pages один раз —
-он создаст ваш поддомен `*.workers.dev`.
+Before the first deployment, open Workers & Pages in Cloudflare once: it creates your `*.workers.dev` subdomain.
 
-## Развёртывание вручную
+## Manual deployment
 
 ```
 cd proxy
@@ -43,12 +37,11 @@ npx wrangler deploy
 npx wrangler secret put GROQ_KEY
 ```
 
-Проверка: откройте `https://sc-texts-proxy.<ваш-поддомен>.workers.dev/health` — должно быть `{"ok":true,...,"key":true}`.
+Check: open `https://sc-texts-proxy.<your-subdomain>.workers.dev/health`, it should return `{"ok":true,...,"key":true}`.
 
-Если Cloudflare откажется создавать ограничение запросов (`ratelimits`) на вашем тарифе — удалите
-блок `[[ratelimits]]` из `wrangler.toml`; посредник продолжит работать без него.
+If Cloudflare refuses to create the rate limit (`ratelimits`) on your plan, remove the `[[ratelimits]]` block from `wrangler.toml`; the proxy keeps working without it.
 
-## Тесты
+## Tests
 
 ```
 node --test test/proxy.test.js

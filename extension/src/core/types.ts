@@ -10,11 +10,11 @@ export interface Line {
   end: number;
   text: string;
   words: Word[];
-  /** Уверенность модели в строке 0…1 (из avg_logprob сегмента). */
+  /** The model's confidence in the line, 0...1 (from the segment's avg_logprob). */
   conf?: number;
-  /** Строка припева (повторяется в песне). */
+  /** A chorus line (repeats in the song). */
   chorus?: boolean;
-  /** Исходный распознанный текст, если строка исправлена по другим повторам припева. */
+  /** The original recognized text, if the line was corrected using other chorus repeats. */
   raw?: string;
 }
 
@@ -23,9 +23,9 @@ export interface RawSegment {
   end: number;
   text: string;
   no_speech_prob: number;
-  /** Средняя уверенность модели (лог-вероятность токенов); ниже −1 — почти наверняка выдумка. */
+  /** Mean model confidence (token log-probability); below -1 it's almost certainly made up. */
   avg_logprob?: number;
-  /** Степень сжатия текста; выше 2.4 — модель зациклилась на повторе. */
+  /** Text compression ratio; above 2.4 the model is looping on a repeat. */
   compression_ratio?: number;
   words: Word[];
 }
@@ -50,38 +50,38 @@ export interface Config {
   mode: Mode;
   apiUrl: string;
   apiKey: string;
-  /** Модель распознавания: whisper-large-v3, whisper-large-v3-turbo (Groq/OpenAI-совместимый API) или scribe_v2 (ElevenLabs). */
+  /** Recognition model: whisper-large-v3, whisper-large-v3-turbo (Groq/OpenAI-compatible API) or scribe_v2 (ElevenLabs). */
   apiModel: string;
-  /** Ключ ElevenLabs (для scribe_v2). */
+  /** ElevenLabs key (for scribe_v2). */
   elevenKey: string;
-  /** Ключ AudioShake: если задан, финальный проход делает AudioShake (модель alignment). */
+  /** AudioShake key: if set, AudioShake does the final pass (the alignment model). */
   audioshakeKey: string;
-  /** Ключ OpenAI (для whisper-1 — Whisper large-v2). */
+  /** OpenAI key (for whisper-1, i.e. Whisper large-v2). */
   openaiKey: string;
-  /** Ключ DeepSeek: если задан, распознанный текст исправляется языковой моделью. */
+  /** DeepSeek key: if set, DeepSeek fixes the recognized lyrics (otherwise Groq does). */
   deepseekKey: string;
-  /** Модель DeepSeek для исправления. */
+  /** DeepSeek model for corrections. */
   deepseekModel: string;
-  /** Чат-модель для перевода, если встроенного переводчика Chrome нет. */
+  /** Chat model for translation when Chrome's built-in translator is unavailable. */
   translateModel: string;
   serverUrl: string;
   language: Language;
   windowSec: number;
   overlapSec: number;
   syncOffsetMs: number;
-  /** Ускорение трека при распознавании по ссылке: 0 — «Авто» (по длительности), иначе 1–8. */
+  /** Track speed-up during link recognition: 0 - "Auto" (by duration), otherwise 1-8. */
   linkSpeed: number;
-  /** Простой режим: расширение не управляет плеером (без ускорения, перемотки и пауз). */
+  /** Simple mode: the extension doesn't control the player (no speed-up, seeking or pausing). */
   simpleMode: boolean;
-  /** Подсказывать модели мат без цензуры. */
+  /** Prompt the model with uncensored profanity. */
   uncensored: boolean;
-  /** Подсказывать модели частый сленг. */
+  /** Prompt the model with common slang. */
   slang: boolean;
-  /** Свои слова для подсказки (через запятую). */
+  /** Custom words for the prompt (comma-separated). */
   customWords: string;
 }
 
-/** Сообщение от offscreen-документа с результатом распознавания одного окна. */
+/** Message from the offscreen document with the recognition result for one window. */
 export interface ChunkResultMessage {
   type: 'CHUNK_RESULT';
   epoch: number;
@@ -89,9 +89,9 @@ export interface ChunkResultMessage {
   durationSec: number;
   first: boolean;
   last: boolean;
-  /** Результат финального прохода по всему непрерывному куску трека. */
+  /** Result of the final pass over a whole continuous piece of the track. */
   final?: boolean;
-  /** Кто распознал (для финального прохода). */
+  /** Which engine recognized it (for the final pass). */
   engine?: 'whisper' | 'audioshake';
   response: TranscribeResponse;
 }

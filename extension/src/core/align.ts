@@ -1,10 +1,10 @@
 /**
- * Синхронизация готового текста (без таймингов, например с Genius) по распознанному звуку.
+ * Syncing ready lyrics (without timings, e.g. from Genius) to the recognized audio.
  *
- * Слова готового текста сопоставляются со словами распознавания (у тех есть время) глобальным
- * выравниванием Нидлмана — Вунша: порядок слов сохраняется, похожие слова («щас» / «сейчас»,
- * латиница / кириллица) считаются совпадением. Каждая строка получает время по своим совпавшим
- * словам; строки без совпадений — по соседним, пропорционально числу слов.
+ * Words of the ready lyrics are matched to recognized words (which have timings) with global
+ * Needleman-Wunsch alignment: word order is kept, similar words ("щас" / "сейчас",
+ * Latin / Cyrillic) count as a match. Each line gets its time from its matched
+ * words; lines without matches get it from their neighbours, proportionally to word count.
  */
 import type { CachedLine } from './cache.ts';
 import { levRatio, normName } from './providers.ts';
@@ -25,7 +25,7 @@ function recTokens(lines: { start: number; end: number; text: string; words?: { 
       }
       continue;
     }
-    // Нет времени слов — раскладываем время строки поровну.
+    // No word timings - split the line's time evenly.
     const ws = l.text.split(/\s+/).map(normName).filter(Boolean);
     const step = (l.end - l.start) / Math.max(1, ws.length);
     ws.forEach((n, i) => out.push({ n, start: l.start + i * step, end: l.start + (i + 1) * step }));
@@ -41,13 +41,13 @@ function sim(a: string, b: string): number {
 
 export interface AlignResult {
   lines: CachedLine[];
-  /** Доля слов готового текста, нашедших пару в распознавании. */
+  /** Share of the ready lyrics' words that found a pair in the recognition. */
   matched: number;
 }
 
 /**
- * Возвращает строки готового текста с таймингами или null, если совпадений слишком мало
- * (распознавание не о той песне или почти пустое).
+ * Returns the ready lyrics' lines with timings, or null if there are too few matches
+ * (the recognition is of a different song or almost empty).
  */
 export function alignLyrics(
   refLines: string[],
@@ -64,12 +64,12 @@ export function alignLyrics(
   const rec = recTokens(recognized);
   if (!ref.length || !rec.length) return null;
 
-  // Нидлман — Вунш: совпадение +2 (точное +3), замена −1, пропуск −1.
+  // Needleman-Wunsch: match +2 (exact +3), substitution -1, gap -1.
   const R = ref.length;
   const C = rec.length;
   const W = C + 1;
   const score = new Float32Array((R + 1) * W);
-  const move = new Uint8Array((R + 1) * W); // 1 — диагональ, 2 — вверх (пропуск слова текста), 3 — влево
+  const move = new Uint8Array((R + 1) * W); // 1 - diagonal, 2 - up (skip a lyrics word), 3 - left
   for (let i = 1; i <= R; i++) {
     score[i * W] = -i;
     move[i * W] = 2;
@@ -111,10 +111,10 @@ export function alignLyrics(
   }
   const matchedCount = pair.reduce((n, p) => n + (p >= 0 ? 1 : 0), 0);
   const matched = matchedCount / R;
-  // Мало совпадений (или совпали считанные слова) — это, скорее всего, другая песня.
+  // Few matches (or only a handful of words matched) - most likely a different song.
   if (matched < minMatched || matchedCount < Math.min(4, R)) return null;
 
-  // Время строк по совпавшим словам.
+  // Line times from the matched words.
   const nLines = refLines.length;
   const t: ({ start: number; end: number } | null)[] = new Array(nLines).fill(null);
   ref.forEach((w, k) => {
@@ -124,7 +124,7 @@ export function alignLyrics(
     const cur = t[w.line];
     t[w.line] = cur ? { start: Math.min(cur.start, r.start), end: Math.max(cur.end, r.end) } : { start: r.start, end: r.end };
   });
-  // Порядок строк важнее отдельных выбросов: время не должно идти назад.
+  // Line order matters more than single outliers: time must not go backwards.
   let last = 0;
   for (let i = 0; i < nLines; i++) {
     const x = t[i];
@@ -133,7 +133,7 @@ export function alignLyrics(
     if (x.end < x.start + 0.3) x.end = x.start + 0.3;
     last = x.start;
   }
-  // Строки без совпадений — между соседями, пропорционально числу слов.
+  // Lines without matches - between their neighbours, proportionally to word count.
   const wordsIn = (i: number) => Math.max(1, refLines[i]!.split(/\s+/).filter(Boolean).length);
   for (let i = 0; i < nLines; i++) {
     if (t[i] || !refLines[i]!.trim()) continue;
@@ -151,7 +151,7 @@ export function alignLyrics(
     i = j - 1;
   }
 
-  // Время слов для пословной подсветки: совпавшие — из распознавания, остальные — равномерно внутри строки.
+  // Word timings for word-level highlighting: matched ones from the recognition, the rest evenly within the line.
   const lines: CachedLine[] = [];
   for (let i = 0; i < nLines; i++) {
     const x = t[i];

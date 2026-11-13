@@ -1,7 +1,7 @@
 import { isPromptEcho } from './vocab.ts';
 import type { Line, RawSegment } from './types.ts';
 
-/** Типичные «галлюцинации» Whisper на музыке/тишине (титры, прощания). */
+/** Typical Whisper "hallucinations" on music/silence (credits, goodbyes). */
 const JUNK: RegExp[] = [
   /субтитры/i,
   /продолжение следует/i,
@@ -11,13 +11,13 @@ const JUNK: RegExp[] = [
   /amara\.org/i,
 ];
 
-/** Фразы-«объявления»: так модель повторяет подсказку или субтитры с названием песни. */
+/** "Announcement" phrases: the model repeating the prompt or subtitles with the song title. */
 const ANNOUNCE = /текст песни|слова песни|song lyrics|lyrics by|lyrics:|слова и музыка|музыка и слова|исполняет|performed by/i;
 
 /**
- * Строка — упоминание названия/исполнителя, а не спетый текст.
- * strict = false: только надёжные случаи («Текст песни…», название вместе с исполнителем, одно имя исполнителя).
- * strict = true: ещё и строка, равная одному названию (её убираем, только если она не повторяется — см. dropTitleEcho).
+ * The line mentions the title/artist rather than being sung lyrics.
+ * strict = false: only reliable cases ("Lyrics of...", title together with artist, the artist's name alone).
+ * strict = true: also a line equal to the title alone (removed only if it doesn't repeat - see dropTitleEcho).
  */
 export function isTitleEcho(text: string, hint: { title?: string | null; artist?: string | null } | null, strict = false): boolean {
   if (ANNOUNCE.test(text)) return true;
@@ -32,9 +32,9 @@ export function isTitleEcho(text: string, hint: { title?: string | null; artist?
 }
 
 /**
- * Убирает из готового текста упоминания названия песни и исполнителя.
- * Строку, равную одному названию, убираем, только если она встречается один раз:
- * повторяющаяся — скорее всего, настоящий припев.
+ * Removes mentions of the song title and artist from ready lyrics.
+ * A line equal to the title alone is removed only if it occurs once:
+ * a repeating one is most likely the real chorus.
  */
 export function dropTitleEcho<T extends { text: string }>(lines: T[], hint: { title?: string | null; artist?: string | null } | null): T[] {
   const title = normalizeText(hint?.title ?? '');
@@ -55,9 +55,9 @@ export function normalizeText(s: string): string {
 }
 
 /**
- * Отсев «галлюцинаций» Whisper на музыке. Пороги — как в самом Whisper:
- * avg_logprob < −1 — модель не уверена; compression_ratio > 2.4 — зацикливание;
- * высокий no_speech_prob при низкой уверенности — тишина/проигрыш.
+ * Filtering Whisper "hallucinations" on music. Thresholds as in Whisper itself:
+ * avg_logprob < -1 - the model is unsure; compression_ratio > 2.4 - looping;
+ * high no_speech_prob with low confidence - silence/instrumental.
  */
 export function isHallucination(s: RawSegment, text: string, maxNoSpeech = 0.6): boolean {
   const lp = s.avg_logprob;
@@ -65,7 +65,7 @@ export function isHallucination(s: RawSegment, text: string, maxNoSpeech = 0.6):
   if (typeof lp === 'number') {
     if (lp < -1.0) return true;
     if (s.no_speech_prob > maxNoSpeech && lp < -0.5) return true;
-    // Одно-два слова с невысокой уверенностью («Here!», «The») — почти всегда выдумка на проигрыше.
+    // One or two words with low confidence ("Here!", "The") are almost always made up during an instrumental.
     if (words <= 2 && lp < -0.55) return true;
   } else if (s.no_speech_prob > maxNoSpeech) {
     return true;
@@ -82,7 +82,7 @@ export function cleanSegments(segs: RawSegment[], maxNoSpeech = 0.6): Line[] {
     if (s.end <= s.start) continue;
     if (isHallucination(s, text, maxNoSpeech)) continue;
     if (JUNK.some((r) => r.test(text))) continue;
-    if (isPromptEcho(text)) continue; // модель повторила подсказку со словарём
+    if (isPromptEcho(text)) continue; // the model repeated the vocabulary prompt
     const conf = typeof s.avg_logprob === 'number' ? Math.exp(s.avg_logprob) : undefined;
     out.push(tightenStart({ start: s.start, end: s.end, text, words: s.words ?? [], ...(conf !== undefined ? { conf } : {}) }));
   }
@@ -90,9 +90,9 @@ export function cleanSegments(segs: RawSegment[], maxNoSpeech = 0.6): Line[] {
 }
 
 /**
- * Whisper часто начинает строку с начала тишины или проигрыша: первое слово получает время
- * «от конца прошлой фразы» и тянется несколько секунд, а строка загорается до появления голоса.
- * Слишком длинное первое слово укорачиваем до правдоподобной длины, и строка начинается с него.
+ * Whisper often starts a line at the beginning of a silence or instrumental: the first word gets a time
+ * "from the end of the previous phrase" and stretches for seconds, so the line lights up before the voice.
+ * An over-long first word is shortened to a plausible length, and the line starts with it.
  */
 export function tightenStart(l: Line): Line {
   const words = l.words ?? [];
@@ -106,7 +106,7 @@ export function tightenStart(l: Line): Line {
   return { ...l, start, words: [{ ...w0, start }, ...words.slice(1)] };
 }
 
-/** Удаляет серии из более чем maxRun одинаковых подряд строк (зацикливание модели). */
+/** Removes runs of more than maxRun identical consecutive lines (model looping). */
 export function dropRepeatedRuns(lines: Line[], maxRun = 3): Line[] {
   const out: Line[] = [];
   let i = 0;

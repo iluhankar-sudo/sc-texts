@@ -1,46 +1,43 @@
-# Получение аудио из SoundCloud: исследование и решение
+# Getting audio from SoundCloud: research and decision
 
-## Вывод
+## Conclusion
 
-Основной способ захвата: **`chrome.tabCapture` + offscreen document** (Manifest V3, Chrome 116+).
-Расширение записывает то, что вкладка SoundCloud и так воспроизводит пользователю через динамики.
-Никаких запросов к закрытым стрим-URL, расшифровки HLS-сегментов или обхода защиты контента нет.
+The main capture method is **`chrome.tabCapture` + an offscreen document** (Manifest V3, Chrome 116+), with a fallback to a tab-sharing prompt (`getDisplayMedia` for the current tab). The extension records what the SoundCloud tab is already playing to the user. There are no requests to private stream URLs, no HLS segment decryption and no bypassing of content protection.
 
-## Рассмотренные варианты
+## Options considered
 
-| Вариант | Работает в MV3 | Плюсы | Минусы | Решение |
+| Option | Works in MV3 | Pros | Cons | Decision |
 |---|---|---|---|---|
-| `chrome.tabCapture.getMediaStreamId` + offscreen document | Да (Chrome 116+) | Чистый аудиопоток вкладки, не нужен выбор окна, стабильно | Нужен жест пользователя (клик по иконке), захват идёт в реальном времени | **Выбран** |
-| `getDisplayMedia({audio:true})` | Да | Не требует спец. разрешения | Каждый раз диалог выбора вкладки, лишний UX | Резерв |
-| `HTMLMediaElement.captureStream()` | Частично | Без диалога | SoundCloud использует MSE/HLS, элемент может быть недоступен или тихим, зависит от вёрстки | Не используем |
-| Скачивание потока через внутренний API/HLS | Технически да | Быстрее реального времени | Нарушает условия SoundCloud (запрет на копирование контента и обход защиты) | **Отклонён** |
-| Официальный API SoundCloud | Да | Легально для стриминга | Условия API запрещают захват и копирование пользовательского контента | Для аудио не годится |
+| `chrome.tabCapture.getMediaStreamId` + offscreen document | Yes (Chrome 116+) | Clean tab audio, no window picker, stable | Needs a user gesture (icon click), real-time capture | **Chosen** |
+| `getDisplayMedia({audio:true})` for the current tab | Yes | No special permission | A sharing prompt every time | Fallback |
+| `HTMLMediaElement.captureStream()` | Partly | No prompt | SoundCloud uses MSE/HLS; the element may be unavailable or silent; depends on markup | Not used |
+| Downloading the stream via internal API/HLS | Technically yes | Faster than real time | Violates SoundCloud's terms (no copying content, no bypassing protection) | **Rejected** |
+| Official SoundCloud API | Yes | Legal for streaming | API terms forbid capturing and copying user content | Not suitable for audio |
 
-## Ограничения платформы
+## Platform limits
 
-- `tabCapture` требует явного действия пользователя (клик по иконке расширения). Автозапуск при открытии трека невозможен.
-- Захват идёт со скоростью воспроизведения: текст появляется с задержкой на длину чанка плюс время распознавания. «Нулевой» задержки быть не может.
-- Захваченный поток по умолчанию глушит звук вкладки, поэтому в offscreen-документе его нужно подключить обратно к `AudioContext.destination`.
-- Service worker MV3 засыпает, поэтому захват живёт в offscreen document, а состояние хранится вне service worker.
-- Chrome закрывает offscreen document при отсутствии причины `USER_MEDIA`/`AUDIO_PLAYBACK`, нужно указать корректный `reasons`.
+- `tabCapture` requires an explicit user action (clicking the extension icon or a keyboard shortcut). It cannot start automatically when a track opens.
+- Capture runs at playback speed. The extension plays the track sped up (with the captured audio resampled back) to shorten the wait, but recognition can never be instant.
+- A captured stream mutes the tab by default, so the offscreen document must route it back to `AudioContext.destination` when sound is wanted.
+- The MV3 service worker goes to sleep, so capture lives in the offscreen document and state is kept outside the service worker.
+- Chrome closes an offscreen document without a valid reason, so `USER_MEDIA` must be set in `reasons`.
 
-## Юридические и этические замечания
+## Legal and ethical notes
 
-- Расширение не извлекает и не сохраняет файлы, а транскрибирует звук, который пользователь слушает сам. Это не обход DRM.
-- Условия SoundCloud и API запрещают копировать контент и обходить защиту. Захват аудио вкладки находится в серой зоне условий использования, поэтому проект предназначен для личного использования и не рассчитан на публикацию в Chrome Web Store без юридической проверки.
-- Аудиочанки уходят на бэкенд пользователя (по умолчанию `localhost`) и не хранятся: удаляются сразу после распознавания.
-- Распознанный текст показывается только пользователю и не сохраняется и не распространяется.
-- Если автор трека запретил использование, расширение не должно это обходить. Для скрытых/приватных треков функция не включается.
+- The extension does not extract or store files; it transcribes audio the user is listening to. This is not DRM circumvention.
+- SoundCloud's terms forbid copying content and bypassing protection. Capturing tab audio is a grey area of the terms of use, so the project is intended for personal use.
+- Audio chunks are sent only for speech recognition and are not stored.
+- If the track's author restricted use, the extension must not work around it. The feature is not enabled for hidden/private tracks.
 
-## Что значит выбор для архитектуры
+## What this means for the architecture
 
-1. Service worker получает клик, запрашивает `streamId`, создаёт offscreen document.
-2. Offscreen document открывает `getUserMedia` с `chromeMediaSource: "tab"`, возвращает звук в динамики и режет поток на чанки (например, по 8 секунд с перекрытием 2 секунды).
-3. Чанки отправляются на FastAPI-бэкенд, Whisper возвращает сегменты с таймкодами.
-4. Content script получает сегменты, привязывает их к `currentTime` плеера SoundCloud (по прогрессу и времени трека) и показывает панель поверх страницы.
-5. При перемотке, паузе или смене трека буфер сбрасывается, чанки перепривязываются к новой позиции.
+1. The service worker receives the click, requests a `streamId` and creates the offscreen document.
+2. The offscreen document opens `getUserMedia` with `chromeMediaSource: "tab"` and cuts the stream into overlapping chunks.
+3. Chunks are sent for recognition; Whisper returns segments with timestamps.
+4. The content script maps segments to the SoundCloud player's position and builds the lyrics.
+5. On seek or track change, the buffer is reset and chunks are re-anchored to the new position.
 
-## Источники
+## Sources
 
 - Chrome for Developers, Audio recording and screen capture: https://developer.chrome.com/docs/extensions/mv3/screen_capture
 - SoundCloud Terms of Use: https://soundcloud.com/terms-of-use
