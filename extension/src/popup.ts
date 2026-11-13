@@ -416,9 +416,15 @@ async function startLink(e: Event) {
   try {
     if (link.path && !skipLookup) {
       const store = await chrome.storage.local.get('results');
-      // Текст этого трека уже есть (найден или распознан раньше) — показываем его, ничего не распознаём заново.
+      // Текст этого трека уже есть — показываем его без распознавания, если ему можно доверять:
+      // закреплён или исправлен вручную, либо найден готовым с таймингами (или уже сверен со звуком).
+      // Прошлое распознавание без закрепа распознаём заново (распознавание со временем улучшается),
+      // а готовый текст без таймингов сверяем со звуком — иначе караоке будет «примерным».
       const saved = (store.results as Record<string, SavedResult> | undefined)?.[trackKey(link.path)];
-      if (saved && saved.lines.length > 0) {
+      const trusted =
+        !!saved &&
+        (saved.pinned || saved.edited || (!!saved.source && saved.source !== 'scan' && (saved.synced !== false || saved.alignedBy === 'audio')));
+      if (saved && saved.lines.length > 0 && trusted) {
         await chrome.storage.local.set({ lastResult: saved });
         urlInput.value = '';
         setNote(saved.pinned ? t('pinnedUsed') : t('savedUsed'));
@@ -435,15 +441,17 @@ async function startLink(e: Event) {
       const found = (await Promise.race([
         chrome.runtime.sendMessage({ type: 'LOOKUP_LINK', url: link.url, path: link.path }).catch(() => null),
         new Promise((r) => setTimeout(() => r(null), 12000)),
-      ])) as { ok?: boolean } | null;
-      if (found?.ok) {
+      ])) as { ok?: boolean; synced?: boolean } | null;
+      // Готовый текст с таймингами — готово. Без таймингов — он станет основой, а время строк
+      // возьмём из распознавания звука (сверка в конце трека).
+      if (found?.ok && found.synced) {
         urlInput.value = '';
         setNote('');
         busy = false;
         lastKey = '';
         return await refresh();
       }
-      setNote(t('noReadyScan'));
+      setNote(found?.ok ? t('refSyncScan') : t('noReadyScan'));
       render();
     }
     // Что сейчас играет в этой вкладке?
