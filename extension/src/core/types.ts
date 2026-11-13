@@ -93,6 +93,8 @@ export interface ChunkResultMessage {
   final?: boolean;
   /** Which engine recognized it (for the final pass). */
   engine?: 'whisper' | 'audioshake';
+  /** Gemini's checked version of a preview window (aligned onto Whisper's timings). */
+  gemini?: boolean;
   response: TranscribeResponse;
 }
 

@@ -16,6 +16,8 @@ export interface GeminiMeta {
   draft: string | null;
   /** Slang, profanity and custom words that are often sung. */
   glossary: string[];
+  /** A short fragment of the song (live checking during playback), not the whole track. */
+  fragment?: boolean;
 }
 
 const SYSTEM =
@@ -28,6 +30,7 @@ const SYSTEM =
 /** Request body for models/{model}:generateContent (REST, v1beta). */
 export function buildGeminiRequest(wavBase64: string, meta: GeminiMeta) {
   const ctx: string[] = [];
+  if (meta.fragment) ctx.push('This is a short fragment of the song: it may start or end in the middle of a phrase. Write those partial phrases too.');
   if (meta.title) ctx.push(`Track title: ${meta.title}`);
   if (meta.artist) ctx.push(`Artist: ${meta.artist}`);
   if (meta.language === 'ru') ctx.push('Language: Russian (may contain English words).');

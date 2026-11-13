@@ -30,9 +30,6 @@ import { t } from '../core/i18n.ts';
 import { extensionAlive } from './alive.ts';
 import { alignLyrics } from '../core/align.ts';
 import { estimateTimings } from '../core/lyrics.ts';
-import { detectScriptLang } from '../core/lang.ts';
-import { glossaryFor } from '../core/vocab.ts';
-import type { GeminiMeta } from '../core/gemini.ts';
 
 export type CaptureMode = 'karaoke' | 'link';
 
@@ -131,8 +128,10 @@ export class Controller {
   private corrected = false; // lyrics were fixed by the AI
   private altText: string | null = null; // lyrics from chunks - the second hypothesis for the AI correction
   private engine: 'whisper' | 'audioshake' | 'gemini' = 'whisper';
-  /** Waiting for Gemini's lyrics (it listens to the whole recording in parallel with the final pass). */
-  private geminiWaiter: ((r: GeminiReply) => void) | null = null;
+  /** How many windows Gemini has checked during playback. */
+  private geminiChunks = 0;
+  /** Gemini started checking at least one window (it is available). */
+  private geminiTried = false;
   private safe = false; // simple mode: don't control the player (setting, or the safeguard kicked in)
   private playCheckFrom = 0; // since when we expect the track to be playing (0 - no check needed)
   private checkPos = 0;
@@ -176,6 +175,8 @@ export class Controller {
     this.corrected = false;
     this.altText = null;
     this.engine = 'whisper';
+    this.geminiChunks = 0;
+    this.geminiTried = false;
     this.safe = opts.mode === 'link' && config.simpleMode;
     if (this.safe) this.speedSetting = 1;
     this.playCheckFrom = 0;
@@ -256,10 +257,13 @@ export class Controller {
   }
 
   /** The final pass has finished (successfully or not). */
-  /** Gemini's lyrics for the whole recording (or why there are none). */
-  onGemini(r: GeminiReply) {
-    this.geminiWaiter?.(r);
-    this.geminiWaiter = null;
+  /** Gemini couldn't check a window (quota, mismatch, error) - only for the report. */
+  onGeminiStarted() {
+    this.geminiTried = true;
+  }
+
+  onGeminiNote(error: string) {
+    this.log(`gemini: ${error}`);
   }
 
   onFinalDone() {
@@ -643,7 +647,23 @@ export class Controller {
     this.playing = false;
     this.newEpoch({ invalidatePrev: false, flush: true });
 
-    // Final pass: the whole recorded track in one request (full song context).
+    // Gemini already checked the lyrics while the track played: no final pass, just wait for the last
+    // windows (Whisper and Gemini) - a few seconds instead of re-sending the whole track.
+    if ((this.geminiTried || this.geminiChunks > 0) && !this.config.audioshakeKey) {
+      this.set({ message: t('almostDone') });
+      await new Promise<void>((res) => {
+        this.idleWaiter = res;
+        setTimeout(res, 40000);
+      });
+      this.log(`gemini checked ${this.geminiChunks} windows`);
+    }
+    if (this.geminiChunks > 0 && !this.config.audioshakeKey) this.engine = 'gemini';
+    else await this.wholeTrackPass();
+    await this.afterRecognition();
+  }
+
+  /** Final pass: the whole recorded track in one request (full song context). */
+  private async wholeTrackPass() {
     // It starts right away without waiting for the preview chunks: they are recognized in parallel,
     // and are no longer needed after the final result.
     const viaAudioshake = !!this.config.audioshakeKey;
@@ -653,19 +673,7 @@ export class Controller {
       this.finalWaiter = res;
       setTimeout(res, viaAudioshake ? 300000 : 90000);
     });
-    const geminiDone = new Promise<GeminiReply>((res) => {
-      this.geminiWaiter = res;
-      setTimeout(() => res({ ok: false, error: 'timeout' }), 90000);
-    });
-    const draft = this.state.lines.map((l) => l.text).join('\n');
-    const gemini: GeminiMeta = {
-      title: this.state.title,
-      artist: this.state.artist,
-      language: this.config.language !== 'auto' ? this.config.language : detectScriptLang(draft),
-      draft: draft || null,
-      glossary: glossaryFor({ uncensored: this.config.uncensored, slang: this.config.slang, custom: this.config.customWords }),
-    };
-    chrome.runtime.sendMessage({ type: 'FINAL_PASS', gemini }).catch(() => {});
+    chrome.runtime.sendMessage({ type: 'FINAL_PASS' }).catch(() => {});
     await finalDone;
     if (!this.finalApplied) {
       // The final result didn't arrive or was worse - wait for the preview chunks.
@@ -675,6 +683,10 @@ export class Controller {
         setTimeout(res, 30000);
       });
     }
+  }
+
+  /** Chorus check, ready lyrics, AI correction, saving. */
+  private async afterRecognition() {
     // The second hypothesis for the AI correction: lyrics from the preview chunks.
     this.altText = this.previewText || null;
     const finalText = this.state.lines.map((l) => l.text).join('\n');
@@ -696,21 +708,6 @@ export class Controller {
         this.set({ lines: al.lines as never });
         this.alignedFrom = ref.source as SavedResult['source'];
       }
-    }
-
-    // Gemini heard the whole track: its text replaces the recognized one, with timings from recognition.
-    // (Ready lyrics written by people are still preferred.)
-    if (!this.alignedFrom && this.state.lines.length > 0) {
-      this.set({ message: t('geminiPass') });
-      const g = await geminiDone;
-      if (g.ok && g.lines?.length) {
-        const al = alignLyrics(g.lines, this.state.lines, 0.3);
-        this.log(`gemini: ${g.lines.length} lines, ${al ? `${Math.round(al.matched * 100)}% of words matched - using its lyrics` : 'too few matches - keeping the recognized lyrics'}`);
-        if (al) {
-          this.set({ lines: al.lines as never });
-          this.engine = 'gemini';
-        }
-      } else this.log(`gemini: ${g.error ?? 'no result'}`);
     }
 
     // Otherwise fix misheard words with a language model: DeepSeek with your own key, or free via Groq.
@@ -882,6 +879,7 @@ export class Controller {
     const ch = lines.length > 3 ? reconcileChorus(lines) : null;
     this.set({ lines: ch ? ch.lines : lines, coverage: addRange(this.state.coverage, trusted) });
     if (msg.final && msg.engine) this.engine = msg.engine;
+    if (msg.gemini) this.geminiChunks++;
   }
 }
 
@@ -903,4 +901,3 @@ function shiftOldScan<L extends { start: number; end: number; words?: { start: n
   return lines.map((l) => ({ ...l, start: sh(l.start), end: sh(l.end), words: l.words?.map((w) => ({ ...w, start: sh(w.start), end: sh(w.end) })) }));
 }
 
-type GeminiReply = { ok: boolean; lines?: string[]; error?: string };

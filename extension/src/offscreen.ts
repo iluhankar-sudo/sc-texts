@@ -12,6 +12,8 @@ import type { Config, TranscribeResponse } from './core/types.ts';
 import { t } from './core/i18n.ts';
 import { geminiEndpoint, groqEndpoint } from './core/config.ts';
 import { buildGeminiRequest, parseGeminiLyrics, toBase64, type GeminiMeta } from './core/gemini.ts';
+import { alignLyrics } from './core/align.ts';
+import { glossaryFor } from './core/vocab.ts';
 
 interface PendingChunk {
   epoch: number;
@@ -100,6 +102,8 @@ async function start(streamId: string | null, config: Config, monitor: boolean, 
   cfg = config;
   speed = rate > 0 ? rate : 1;
   lockedLang = null;
+  geminiFails = 0;
+  geminiMeta = { title: null, artist: null, glossary: glossaryFor({ uncensored: config.uncensored, slang: config.slang, custom: config.customWords }) };
   takes = [];
   takeBlocks = [];
   takeLen = 0;
@@ -206,7 +210,7 @@ function handleReset(m: {
   }
   clearBuffer();
   closeTake();
-  if (!busy && queue.length === 0) send({ type: 'IDLE' });
+  maybeIdle();
   epoch = m.epoch;
   paused = m.paused;
   if (m.hint) hint = m.hint;
@@ -231,12 +235,10 @@ function closeTake() {
  * Final pass: each continuous take (usually the whole track) is recognized in one request -
  * with the full song context this is noticeably more accurate than 40-second chunks.
  */
-function finalPass(meta: GeminiMeta | null) {
+function finalPass() {
   closeTake();
   const list = takes;
   takes = [];
-  // Gemini listens to the same recording in parallel; its text is aligned onto Whisper's timings later.
-  void geminiPass(list, meta);
   if (cfg?.audioshakeKey) {
     void audioshakePass(list);
     return;
@@ -402,6 +404,7 @@ async function pump() {
           final: !!c.final,
           response,
         });
+        if (!c.final) void geminiChunk(c, response);
         send({ type: 'STATUS', state: 'listening' });
       } catch (err) {
         send({ type: 'STATUS', state: 'error', message: t('recFailed', { msg: String(err) }) });
@@ -409,7 +412,7 @@ async function pump() {
     }
   } finally {
     busy = false;
-    if (asPending === 0) send({ type: 'IDLE' });
+    maybeIdle();
   }
 }
 
@@ -521,7 +524,7 @@ chrome.runtime.onMessage.addListener((m) => {
       handleReset(m);
       break;
     case 'FINAL_PASS':
-      finalPass(m.gemini ?? null);
+      finalPass();
       break;
   }
 });
@@ -546,43 +549,78 @@ chrome.runtime.onConnect.addListener((p) => {
   });
 });
 
-/** Gemini takes at most this much audio (the request limit is 20 MB; 16 kHz WAV in base64 is ~43 KB per second). */
-const GEMINI_MAX_SEC = 7 * 60;
+// ---------------- Gemini: live checking during playback ----------------
 
-/** Gemini listens to the whole recording and writes the lyrics down; the result goes to the page as GEMINI_RESULT. */
-async function geminiPass(list: Take[], meta: GeminiMeta | null) {
+/** Gemini requests in flight (the page waits for them before finishing). */
+let geminiPending = 0;
+/** Consecutive Gemini failures; after several (quota, no key) it is switched off until the next track. */
+let geminiFails = 0;
+/** Track info for Gemini (title, artist, glossary) - comes with START. */
+let geminiMeta: Omit<GeminiMeta, 'draft' | 'language' | 'fragment'> | null = null;
+
+function maybeIdle() {
+  if (!busy && queue.length === 0 && asPending === 0 && geminiPending === 0) send({ type: 'IDLE' });
+}
+
+/**
+ * Right after Whisper recognized a window, Gemini listens to the same audio and writes the lyrics down.
+ * Its lines are aligned onto Whisper's word timings for that window and sent as a CHUNK_RESULT for the same
+ * window: the page merges it over Whisper's lines, so the lyrics on screen get checked while the track plays.
+ */
+async function geminiChunk(c: PendingChunk, whisper: TranscribeResponse) {
   const ep = geminiEndpoint();
-  if (!ep || !meta || !list.length) return send({ type: 'GEMINI_RESULT', ok: false, error: ep ? 'no audio' : 'no proxy' });
+  const words = whisper.segments.reduce((n, s) => n + s.text.split(/\s+/).filter(Boolean).length, 0);
+  if (!ep || geminiFails >= 3 || words < 3) return;
+  geminiPending++;
+  send({ type: 'GEMINI_STARTED' });
   try {
-    const pcm = list.map((tk) => toAsrPcm(tk.samples, tk.eff));
-    const total = pcm.reduce((n, p) => n + p.length, 0);
-    if (total / 16000 > GEMINI_MAX_SEC) return send({ type: 'GEMINI_RESULT', ok: false, error: 'track too long' });
-    const all = new Int16Array(total);
-    let at = 0;
-    for (const p of pcm) {
-      all.set(p, at);
-      at += p.length;
+    const meta: GeminiMeta = {
+      title: c.hint?.title ?? geminiMeta?.title ?? null,
+      artist: c.hint?.artist ?? geminiMeta?.artist ?? null,
+      glossary: geminiMeta?.glossary ?? [],
+      language: cfg?.language && cfg.language !== 'auto' ? cfg.language : lockedLang,
+      draft: whisper.segments.map((s) => s.text.trim()).join('\n'),
+      fragment: true,
+    };
+    const body = JSON.stringify(buildGeminiRequest(toBase64(new Uint8Array(c.wav)), meta));
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 30000);
+    let json: unknown;
+    try {
+      const r = await fetch(ep.url, { method: 'POST', signal: ctrl.signal, headers: { ...ep.headers, 'Content-Type': 'application/json' }, body });
+      json = await r.json().catch(() => null);
+      if (!r.ok) throw new Error(`HTTP ${r.status}: ${((json as { error?: { message?: string } } | null)?.error?.message ?? '').slice(0, 100)}`);
+    } finally {
+      clearTimeout(timer);
     }
-    const wav = encodeWav(all, 16000);
-    const body = JSON.stringify(buildGeminiRequest(toBase64(new Uint8Array(wav)), meta));
-    const json = await withRetry(async () => {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 80000);
-      try {
-        const r = await fetch(ep.url, { method: 'POST', signal: ctrl.signal, headers: { ...ep.headers, 'Content-Type': 'application/json' }, body });
-        const j = await r.json().catch(() => null);
-        if (!r.ok) {
-          const msg = (j as { error?: { message?: string } } | null)?.error?.message ?? '';
-          throw Object.assign(new Error(`HTTP ${r.status}: ${msg.slice(0, 120)}`), { status: r.status });
-        }
-        return j;
-      } finally {
-        clearTimeout(timer);
-      }
-    });
     const res = parseGeminiLyrics(json);
-    send(res.ok ? { type: 'GEMINI_RESULT', ok: true, lines: res.lines } : { type: 'GEMINI_RESULT', ok: false, error: res.error });
+    if (!res.ok) throw new Error(res.error);
+    const al = alignLyrics(
+      res.lines,
+      whisper.segments.map((s) => ({ start: s.start, end: s.end, text: s.text, words: s.words })),
+      0.3,
+    );
+    if (!al) throw new Error('gemini text does not match the audio window');
+    geminiFails = 0;
+    send({
+      type: 'CHUNK_RESULT',
+      epoch: c.epoch,
+      startWall: c.startWall,
+      durationSec: c.durationSec,
+      first: c.first,
+      last: c.last,
+      final: false,
+      gemini: true,
+      response: {
+        ...whisper,
+        segments: al.lines.map((l) => ({ start: l.start, end: l.end, text: l.text, words: l.words ?? [], no_speech_prob: 0, avg_logprob: -0.1, compression_ratio: 1 })),
+      },
+    });
   } catch (e) {
-    send({ type: 'GEMINI_RESULT', ok: false, error: String(e).slice(0, 160) });
+    geminiFails++;
+    send({ type: 'GEMINI_NOTE', error: String(e).slice(0, 160) });
+  } finally {
+    geminiPending--;
+    maybeIdle();
   }
 }

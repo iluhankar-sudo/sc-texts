@@ -60,8 +60,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     case 'FINAL_DONE':
       controller.onFinalDone();
       return false;
-    case 'GEMINI_RESULT':
-      controller.onGemini({ ok: !!msg.ok, lines: msg.lines, error: msg.error });
+    case 'GEMINI_STARTED':
+      controller.onGeminiStarted();
+      return false;
+    case 'GEMINI_NOTE':
+      controller.onGeminiNote(String(msg.error ?? ''));
       return false;
   }
   return false;

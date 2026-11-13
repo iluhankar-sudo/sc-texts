@@ -679,3 +679,10 @@ test('gemini: request carries the audio and context; reply is parsed into lines'
   assert.equal(parseGeminiLyrics({ error: { message: 'quota' } }).ok, false);
   assert.equal(toBase64(new Uint8Array([65, 66, 67])), 'QUJD');
 });
+
+test('gemini: fragment mode tells the model it is a piece of the song', async () => {
+  const { buildGeminiRequest } = await import('../src/core/gemini.ts');
+  const req = buildGeminiRequest('QQ==', { title: null, artist: null, language: null, draft: null, glossary: [], fragment: true });
+  const text = (req.contents[0]!.parts[1] as { text: string }).text;
+  assert.ok(text.includes('short fragment'));
+});
