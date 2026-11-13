@@ -505,8 +505,9 @@ async function startLink(e: Event) {
       streamId,
       url: link.url,
       path: link.path,
-      // Распознаём трек, который сейчас слушают, — звук не глушим.
-      monitor: monitor || sameTrack,
+      // Даже если этот трек уже играет, распознаём быстро (с ускорением и без звука), как и по
+      // любой ссылке; со звуком и на обычной скорости — только если включена кнопка звука.
+      monitor,
     });
     if (res && res.ok === false) setNote(res.error ?? t('cantStart'), true);
     else {
