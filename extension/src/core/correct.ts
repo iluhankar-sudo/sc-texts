@@ -4,6 +4,7 @@
  * исправляет неверно услышанные слова и помечает явный мусор. Порядок и число строк сохраняются,
  * поэтому сохраняются и тайминги строк (пословные — только у неизменённых строк).
  */
+import { lineSim } from './chorus.ts';
 import { normalizeText } from './filter.ts';
 import type { Line } from './types.ts';
 
@@ -75,7 +76,9 @@ export function applyCorrection(lines: Line[], raw: string | null | undefined): 
       dropped++;
       return;
     }
-    const text = typeof it?.text === 'string' && it.text.trim() ? it.text.trim() : src.text;
+    let text = typeof it?.text === 'string' && it.text.trim() ? it.text.trim() : src.text;
+    // Модель переписала строку почти целиком — это уже не исправление ослышки, оставляем распознанное.
+    if (lineSim(text, src.text) < 0.4) text = src.text;
     // Строка не изменилась по сути — оставляем пословные тайминги для караоке.
     const same = normalizeText(text) === normalizeText(src.text);
     out.push({ ...src, text, words: same ? src.words : [] });

@@ -15,30 +15,40 @@ import { glossaryFor } from './core/vocab.ts';
  * возвращают в его вкладку. Когда трек дослушан, вкладка распознавания закрывается.
  */
 import { isSameTrack, parseTrackUrl, trackUrlFromHtml, type TrackLink } from './core/link.ts';
-import { normalizeConfig } from './core/config.ts';
+import { groqEndpoint, normalizeConfig } from './core/config.ts';
 import type { Config } from './core/types.ts';
 import { findLyrics, metaNote, providerLog, saveFound, trackMeta } from './lyrics.ts';
 import { installHeaderRules } from './providers.ts';
 import { buildCorrectionMessages } from './core/correct.ts';
 
 /** Исправление текста через DeepSeek. Возвращает сырой JSON-ответ модели или бросает ошибку. */
+/** Бесплатная модель Groq для исправления текста (та же, что для перевода; разрешена в прокси). */
+const GROQ_FIX_MODEL = 'llama-3.3-70b-versatile';
+
+/**
+ * Исправление неверно услышанных слов языковой моделью: DeepSeek, если задан свой ключ,
+ * иначе бесплатно через Groq (свой ключ или прокси расширения).
+ */
 async function correctViaDeepSeek(
   lines: { text: string }[],
   meta: { title: string | null; artist: string | null; alternative?: string | null },
 ): Promise<string> {
   const cfg = normalizeConfig(await chrome.storage.local.get(null));
-  if (!cfg.deepseekKey) throw new Error('no key');
+  const groq = cfg.deepseekKey ? null : groqEndpoint(cfg);
+  if (!cfg.deepseekKey && !groq) throw new Error('no key');
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 60000);
   try {
-    const r = await fetch('https://api.deepseek.com/chat/completions', {
+    const r = await fetch(cfg.deepseekKey ? 'https://api.deepseek.com/chat/completions' : `${groq!.url}/chat/completions`, {
       method: 'POST',
       signal: ctrl.signal,
-      headers: { Authorization: `Bearer ${cfg.deepseekKey}`, 'Content-Type': 'application/json' },
+      headers: cfg.deepseekKey
+        ? { Authorization: `Bearer ${cfg.deepseekKey}`, 'Content-Type': 'application/json' }
+        : { ...groq!.headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: cfg.deepseekModel,
+        model: cfg.deepseekKey ? cfg.deepseekModel : GROQ_FIX_MODEL,
         temperature: 0,
-        max_tokens: 8000,
+        max_tokens: cfg.deepseekKey ? 8000 : 4000,
         response_format: { type: 'json_object' },
         messages: buildCorrectionMessages(lines, { ...meta, glossary: glossaryFor({ uncensored: cfg.uncensored, slang: cfg.slang, custom: cfg.customWords }) }),
       }),

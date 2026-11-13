@@ -676,7 +676,8 @@ export class Controller {
     }
 
     // Ключ DeepSeek задан — исправляем неверно услышанные слова перед сохранением.
-    if (this.config.deepseekKey && this.state.lines.length > 0 && !this.alignedFrom) {
+    // Исправление слов языковой моделью: DeepSeek со своим ключом или бесплатно через Groq.
+    if ((this.config.deepseekKey || this.config.mode === 'cloud') && this.state.lines.length > 0 && !this.alignedFrom) {
       this.set({ message: t('correcting') });
       const res = await chrome.runtime
         .sendMessage({

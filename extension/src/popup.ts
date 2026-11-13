@@ -706,8 +706,9 @@ copyBtn.addEventListener('click', async () => {
 
 async function init() {
   [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const saved = await chrome.storage.local.get(['language', 'monitor', 'translations', 'deepseekKey']);
-  hasDeepseek = typeof saved.deepseekKey === 'string' && saved.deepseekKey.trim() !== '';
+  const saved = await chrome.storage.local.get(['language', 'monitor', 'translations', 'deepseekKey', 'mode']);
+  // Исправить текст можно всегда в облачном режиме (бесплатно через Groq) или со своим ключом DeepSeek.
+  hasDeepseek = (typeof saved.deepseekKey === 'string' && saved.deepseekKey.trim() !== '') || (saved.mode ?? 'cloud') === 'cloud';
   translations = new Map(Object.entries((saved.translations as Record<string, string> | undefined) ?? {}));
   monitor = saved.monitor === true;
   // Если на вкладке открыт трек SoundCloud, подставляем его ссылку.
