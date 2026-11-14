@@ -1,0 +1,165 @@
+# Publish a new version to the Chrome Web Store.
+# Run it by hand: Actions → "Publish to Chrome Web Store" → Run workflow (choose patch / minor / major).
+#
+# What it does:
+#   1) raises the version in manifest.json (0.1.0 → 0.1.1 for "patch") and commits it to master;
+#   2) runs the tests and builds the extension without a key (with the proxy address);
+#   3) uploads the archive to the Chrome Web Store and submits it for review
+#      (users get the update automatically after the review);
+#   4) creates the GitHub release vX.Y.Z with the same archive.
+#
+# One-time setup (Settings → Secrets and variables → Actions):
+#   secret:    CWS_SERVICE_ACCOUNT    - JSON key of a Google Cloud service account with the Chrome Web Store API enabled,
+#                                       added in the Chrome Web Store Developer Dashboard
+#   variables: CWS_PUBLISHER_ID       - Developer Dashboard → Settings → Publisher ID
+#              CWS_EXTENSION_ID       - the extension's 32-letter ID (Dashboard → Package)
+#              PROXY_URL              - optional, the proxy address (default: the deployed sc-texts-proxy)
+name: Publish to Chrome Web Store
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which part of the version to raise
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      submit:
+        description: Submit for review right away (otherwise only upload a draft)
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
+      EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Check the setup
+        env:
+          SA: ${{ secrets.CWS_SERVICE_ACCOUNT }}
+        run: |
+          missing=""
+          [ -n "$SA" ] || missing="$missing secret CWS_SERVICE_ACCOUNT;"
+          [ -n "$PUBLISHER_ID" ] || missing="$missing variable CWS_PUBLISHER_ID;"
+          [ -n "$EXTENSION_ID" ] || missing="$missing variable CWS_EXTENSION_ID;"
+          if [ -n "$missing" ]; then echo "::error::Not set up yet:$missing see the comment at the top of publish.yml"; exit 1; fi
+
+      - name: Raise the version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          ver=$(node -e '
+            const fs = require("fs");
+            const files = ["extension/public/manifest.json", "extension/package.json"];
+            const cur = JSON.parse(fs.readFileSync(files[0], "utf8")).version.split(".").map(Number);
+            while (cur.length < 3) cur.push(0);
+            const i = { major: 0, minor: 1, patch: 2 }[process.env.BUMP];
+            cur[i]++;
+            for (let k = i + 1; k < 3; k++) cur[k] = 0;
+            const next = cur.slice(0, 3).join(".");
+            for (const f of files) {
+              const j = JSON.parse(fs.readFileSync(f, "utf8"));
+              j.version = next;
+              fs.writeFileSync(f, JSON.stringify(j, null, 2) + "\n");
+            }
+            console.log(next);
+          ')
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "New version: $ver"
+
+      - name: Install dependencies
+        working-directory: extension
+        run: npm install --no-audit --no-fund
+
+      - name: Tests
+        working-directory: extension
+        run: npm test
+
+      - name: Build (no key, with the proxy address)
+        working-directory: extension
+        env:
+          PROXY_URL: ${{ vars.PROXY_URL || 'https://sc-texts-proxy.220707.workers.dev' }}
+          APP_TOKEN: ${{ secrets.APP_TOKEN }}
+        run: |
+          node build.mjs
+          if grep -rqE 'gsk_[A-Za-z0-9]{20,}' dist; then echo "::error::A Groq key ended up in the build"; exit 1; fi
+          cd dist && zip -qr ../../sc-texts.zip . -x '*.map'
+
+      - name: Sign in to Google
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.CWS_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+
+      - name: Upload to the Chrome Web Store
+        env:
+          TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          set -o pipefail
+          base="https://chromewebstore.googleapis.com"
+          item="publishers/${PUBLISHER_ID}/items/${EXTENSION_ID}"
+          curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/zip" \
+            --data-binary @sc-texts.zip "$base/upload/v2/$item:upload" | tee upload.json
+          echo
+          state=$(node -p "(JSON.parse(require('fs').readFileSync('upload.json','utf8')).uploadState) || ''")
+          for i in $(seq 1 30); do
+            [ "$state" = "IN_PROGRESS" ] || break
+            sleep 5
+            curl -sS -H "Authorization: Bearer $TOKEN" "$base/v2/$item:fetchStatus" | tee status.json
+            echo
+            state=$(node -p "const j = JSON.parse(require('fs').readFileSync('status.json','utf8')); j.lastAsyncUploadState || j.uploadState || ''")
+          done
+          if [ "$state" != "SUCCEEDED" ]; then
+            echo "::error::Upload did not succeed (state: ${state:-unknown}). See the reply above."
+            exit 1
+          fi
+
+      - name: Submit for review
+        if: ${{ inputs.submit }}
+        env:
+          TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Length: 0" \
+            "https://chromewebstore.googleapis.com/v2/publishers/${PUBLISHER_ID}/items/${EXTENSION_ID}:publish" | tee publish.json
+          echo
+          if node -e "const j = JSON.parse(require('fs').readFileSync('publish.json','utf8')); process.exit(j.error ? 1 : 0)"; then
+            echo "::notice::Version ${{ steps.version.outputs.version }} was submitted for review. Users get it automatically once it is approved."
+          else
+            echo "::error::The store refused to publish. See the reply above."
+            exit 1
+          fi
+
+      - name: Commit the new version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898299+github-actions[bot]@users.noreply.github.com"
+          git add extension/public/manifest.json extension/package.json
+          # [skip ci]: the regular build is not needed, this workflow already built and released the archive.
+          git commit -m "Release v${{ steps.version.outputs.version }} [skip ci]"
+          git pull --rebase origin master
+          git push origin HEAD:master
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver="${{ steps.version.outputs.version }}"
+          gh release create "v${ver}" sc-texts.zip --title "sc texts ${ver}" --latest \
+            --notes "Version ${ver}, submitted to the Chrome Web Store. To install by hand: unpack sc-texts.zip and load the folder in chrome://extensions (Developer mode → Load unpacked)."
